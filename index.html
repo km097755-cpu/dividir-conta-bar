@@ -78,7 +78,8 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 .breakdown span:last-child, .rows .v { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap }
 .rows { list-style: none; margin: 0; padding: 0; display: grid }
 .rows li { padding: 10px 0; border-top: 1px dashed var(--line); align-items: baseline }
-.rows .who { min-width: 0; overflow-wrap: anywhere; flex: 1 1 10em }
+.rows .who { min-width: 0; overflow-wrap: anywhere; flex: 1 1 10em; display: flex; align-items: center; gap: 6px }
+.rows .res-nome { flex: 1 1 6em; min-width: 0; padding: 6px 10px }
 .rows li:has(.btn-ghost) { align-items: center; flex-wrap: wrap }
 .rows .tag { display: inline-block; white-space: nowrap; margin-left: 6px; font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); vertical-align: middle }
 .rows .v { font-weight: 700; font-size: 1.05rem }
@@ -213,8 +214,11 @@ function campo(id, rotulo, max) {
   return msg ? null : v;
 }
 
-// Nome é opcional: sem nome, a pessoa aparece como "Pessoa N"
-const rotulo = (p, i) => p.nome.trim() || `Pessoa ${i + 1}`;
+// Nome é opcional (campo em branco mostra "Pessoa N"). O nome pode ser escrito em "Quem pagou" ou em "Quanto cada um paga"; copia para o outro campo sem redesenhar (não perde o cursor)
+function sincronizaNome(p, i, valor) {
+  p.nome = valor;
+  for (const id of ['nome-' + i, 'res-nome-' + i]) { const el = $(id); if (el && el.value !== valor) el.value = valor; }
+}
 
 function renderLista() {
   const ul = $('lista');
@@ -223,8 +227,8 @@ function renderLista() {
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
     const nome = Object.assign(document.createElement('input'), { type: 'text', className: 'plain pname', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
-    nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
-    nome.addEventListener('input', () => { p.nome = nome.value; calcular(); });
+    nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`); nome.id = 'nome-' + i;
+    nome.addEventListener('input', () => sincronizaNome(p, i, nome.value));
     const pag = document.createElement('select'); pag.className = 'pag'; pag.id = 'pag-' + i;
     pag.setAttribute('aria-label', `Forma de pagamento da pessoa ${i + 1}`);
     pag.append(...opcoesPagamento());
@@ -268,10 +272,14 @@ function calcularResultado() {
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
-    const who = document.createElement('span'); who.className = 'who'; who.textContent = rotulo(p, i);
+    const who = document.createElement('span'); who.className = 'who';
+    const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
+    nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
+    nome.addEventListener('input', () => sincronizaNome(p, i, nome.value));
+    who.append(nome);
     if (PAGAMENTOS[p.pag]) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: PAGAMENTOS[p.pag] }));
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
-    cp.setAttribute('aria-label', 'Copiar cobrança de ' + rotulo(p, i));
+    cp.setAttribute('aria-label', `Copiar cobrança da pessoa ${i + 1}`);
     cp.addEventListener('click', async () => {
       const ok = await copiarTexto(mensagemCobranca(p.nome.trim(), r.partes[i], $('pix').value));
       avisar(ok ? 'Cobrança copiada' : 'Não foi possível copiar. Tente de novo.');
