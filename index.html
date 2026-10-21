@@ -70,7 +70,6 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 .pag { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; min-height: 44px; padding: 0 8px }
 .pname { overflow-wrap: anywhere; font-weight: 700 }
 .empty { color: var(--muted); font-style: italic }
-.result { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px) }
 .total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap }
 .total strong { font-family: var(--f-num); font-size: clamp(1.6rem, 6vw, 2.2rem); font-variant-numeric: tabular-nums }
 .breakdown { display: grid; gap: 4px; font-size: .92rem; color: var(--muted) }
@@ -129,14 +128,13 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
         <div class="err" id="nome-err" role="alert"></div>
         <ul class="people" id="lista" aria-labelledby="h-pessoas"></ul>
       </div>
-
-      <h2 id="h-totais">Total por forma de pagamento</h2>
-      <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
     </section>
 
     <section aria-labelledby="h-res" class="result">
       <h2 id="h-res">Quanto cada um paga</h2>
       <div class="panel" id="resultado" aria-live="polite"></div>
+      <h2 id="h-totais">Total por forma de pagamento</h2>
+      <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
     </section>
