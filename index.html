@@ -64,7 +64,9 @@ button { font: inherit; cursor: pointer; border-radius: 8px; min-height: 44px }
 .add { display: flex; gap: 8px }
 .add input { flex: 1 }
 ul.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
-ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px }
+ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px }
+@media (max-width: 480px) { ul.people li { grid-template-columns: minmax(0, 1fr) auto } }
+.pag { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; min-height: 44px; padding: 0 8px }
 .pname { overflow-wrap: anywhere; font-weight: 700 }
 .drink { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; white-space: nowrap }
 .drink input { width: 20px; height: 20px; accent-color: var(--accent) }
@@ -77,9 +79,9 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 .breakdown span:last-child, .rows .v { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap }
 .rows { list-style: none; margin: 0; padding: 0; display: grid }
 .rows li { padding: 10px 0; border-top: 1px dashed var(--line); align-items: baseline }
-.rows .who { min-width: 0; overflow-wrap: anywhere; flex: 1 }
+.rows .who { min-width: 0; overflow-wrap: anywhere; flex: 1 1 10em }
 .rows li:has(.btn-ghost) { align-items: center; flex-wrap: wrap }
-.rows .tag { display: inline-block; margin-left: 6px; font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); vertical-align: middle }
+.rows .tag { display: inline-block; white-space: nowrap; margin-left: 6px; font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); vertical-align: middle }
 .rows .v { font-weight: 700; font-size: 1.05rem }
 .check { font-size: .9rem; color: var(--ok); font-weight: 700 }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
@@ -170,6 +172,15 @@ function dividir(comida, bebida, bebeu) {
   return { partes, total };
 }
 
+// Formas de pagamento; '' = não informado
+const PAGAMENTOS = { pix: 'PIX', debito: 'Débito', credito: 'Crédito', dinheiro: 'Dinheiro' };
+// Soma das partes por forma de pagamento, na ordem de PAGAMENTOS, só as que aparecem
+function resumoPagamentos(formas, partes) {
+  const soma = {};
+  formas.forEach((f, i) => { const k = f in PAGAMENTOS ? f : ''; soma[k] = (soma[k] || 0) + partes[i]; });
+  return [...Object.keys(PAGAMENTOS), ''].filter(k => k in soma).map(k => [k ? PAGAMENTOS[k] : 'Não informado', soma[k]]);
+}
+
 // Mensagem de cobrança pronta para colar no WhatsApp. A chave Pix não é guardada em lugar nenhum.
 function mensagemCobranca(nome, centavos, pix) {
   const chave = String(pix || '').trim();
@@ -195,8 +206,8 @@ function avisar(msg) {
 
 const $ = id => document.getElementById(id);
 let pessoas = [
-  { nome: 'Ana', bebeu: true }, { nome: 'Bruno', bebeu: true },
-  { nome: 'Carla', bebeu: false }, { nome: 'Diego', bebeu: false }
+  { nome: 'Ana', bebeu: true, pag: '' }, { nome: 'Bruno', bebeu: true, pag: '' },
+  { nome: 'Carla', bebeu: false, pag: '' }, { nome: 'Diego', bebeu: false, pag: '' }
 ];
 
 function campo(id, rotulo, max) {
@@ -220,10 +231,15 @@ function renderLista() {
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'bebeu-' + i; cb.checked = p.bebeu;
     cb.addEventListener('change', () => { p.bebeu = cb.checked; calcular(); });
     lab.append(cb, document.createTextNode(' bebeu'));
+    const pag = document.createElement('select'); pag.className = 'pag'; pag.id = 'pag-' + i;
+    pag.setAttribute('aria-label', 'Forma de pagamento de ' + p.nome);
+    pag.append(new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v)));
+    pag.value = p.pag || '';
+    pag.addEventListener('change', () => { p.pag = pag.value; calcular(); });
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn-ghost'; rm.textContent = 'Remover';
     rm.setAttribute('aria-label', 'Remover ' + p.nome);
     rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('nome').focus(); });
-    li.append(nome, lab, rm); ul.append(li);
+    li.append(nome, lab, pag, rm); ul.append(li);
   });
 }
 
@@ -243,12 +259,14 @@ function calcular() {
       <div><span>Bebidas alcoólicas</span><span>${fmt(bebida)}</span></div>
     </div>
     <ul class="rows"></ul>
+    <div class="breakdown" id="por-pagamento"></div>
     <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>`;
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
     const who = document.createElement('span'); who.className = 'who'; who.textContent = p.nome;
     if (p.bebeu) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'bebeu' }));
+    if (PAGAMENTOS[p.pag]) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: PAGAMENTOS[p.pag] }));
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
     cp.setAttribute('aria-label', 'Copiar cobrança de ' + p.nome);
     cp.addEventListener('click', async () => {
@@ -257,6 +275,13 @@ function calcular() {
     });
     li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
     ul.append(li);
+  });
+  const resumo = $('por-pagamento');
+  resumo.append(Object.assign(document.createElement('span'), { className: 'label', textContent: 'Por forma de pagamento' }));
+  resumoPagamentos(pessoas.map(p => p.pag), r.partes).forEach(([forma, v]) => {
+    const d = document.createElement('div');
+    d.append(Object.assign(document.createElement('span'), { textContent: forma }), Object.assign(document.createElement('span'), { textContent: fmt(v) }));
+    resumo.append(d);
   });
 }
 
@@ -271,7 +296,7 @@ $('form-add').addEventListener('submit', e => {
   else if (pessoas.length >= MAX_PESSOAS) msg = `O limite é de ${MAX_PESSOAS} pessoas.`;
   $('nome-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
   if (msg) return;
-  pessoas.push({ nome, bebeu: false }); el.value = ''; renderLista(); calcular(); el.focus();
+  pessoas.push({ nome, bebeu: false, pag: '' }); el.value = ''; renderLista(); calcular(); el.focus();
 });
 
 renderLista(); calcular();
@@ -305,6 +330,8 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(/^R\$\s1\.234,56$/.test(real)
      && mensagemCobranca('Ana', 123456, '  ana@ex.com ') === `Oi, Ana! A sua parte da conta do bar ficou em ${real}. Pix: ana@ex.com. Obrigado!`
      && mensagemCobranca('Bruno', 10258, '   ') === `Oi, Bruno! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, em reais');
+  ok(JSON.stringify(resumoPagamentos(['dinheiro', 'pix', '', 'pix', 'xyz'], [100, 200, 300, 400, 500]))
+     === JSON.stringify([['PIX', 600], ['Dinheiro', 100], ['Não informado', 800]]), 'resumo por forma de pagamento');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
