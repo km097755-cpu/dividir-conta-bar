@@ -49,7 +49,8 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
 .field { display: grid; gap: 4px }
-.field label { font-weight: 700 }
+.field label, .field-title { font-weight: 700 }
+.field .btn-ghost { justify-self: start }
 .money { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden }
 .money span { padding: 10px 10px; color: var(--muted); font-family: var(--f-num); border-right: 1px solid var(--line) }
 input[type="text"], input[type="date"] { font: inherit; color: var(--ink); background: var(--bg); border: 0; padding: 10px 12px; width: 100%; min-width: 0; font-family: var(--f-num); font-variant-numeric: tabular-nums }
@@ -118,6 +119,11 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
           <input type="text" id="pix" class="plain" autocomplete="off" maxlength="100" aria-describedby="pix-hint">
           <div class="hint" id="pix-hint">Opcional. CPF, e-mail, telefone ou chave aleatória. Entra na mensagem de cobrança.</div>
         </div>
+        <div class="field">
+          <span class="field-title">Pasta das comandas</span>
+          <button type="button" class="btn-ghost" id="escolher-pasta">Escolher pasta das comandas</button>
+          <div class="hint" id="pasta-hint">Cada comanda finalizada é salva como arquivo nesta pasta (ex.: E:\Bookafé). Sem pasta escolhida, o arquivo vai para Downloads.</div>
+        </div>
       </form>
 
       <h2 id="h-pessoas">Quem pagou</h2>
@@ -173,10 +179,50 @@ function dividir(total, n) {
 // A planilha calcula a parte de cada um com a mesma regra de dividir().
 const hojeISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const dataBR = iso => iso.split('-').reverse().join('/');
-const horaAgora = () => new Date().toTimeString().slice(0, 5);
+const horaAgora = () => new Date().toTimeString().slice(0, 8);
+const reais = c => (c / 100).toFixed(2).replace('.', ',');
+// Nome seguro para Excel: sem tabulação/quebra e sem =, +, -, @ no começo (o Excel trataria como fórmula)
+const nomeSeguro = (p, i) => p.nome.replace(/[\t\r\n]/g, ' ').trim().replace(/^[=+\-@]+/, '').trim() || `Pessoa ${i + 1}`;
 function linhasPlanilha(data, comanda, totalCentavos, lista) {
-  const total = (totalCentavos / 100).toFixed(2).replace('.', ',');
-  return lista.map((p, i) => [data, comanda, total, p.nome.trim().replace(/\t/g, ' ') || `Pessoa ${i + 1}`, PAGAMENTOS[p.pag] || 'Sem forma'].join('\t')).join('\n');
+  return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma'].join('\t')).join('\n');
+}
+// Cópia da comanda em CSV (abre no Excel): separador ";" e BOM para os acentos
+function csvComanda(data, comanda, totalCentavos, lista, partes) {
+  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Parte (R$)'],
+    ...lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])])];
+  return '﻿' + linhas.map(l => l.map(v => /[;"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(';')).join('\r\n') + '\r\n';
+}
+
+// Pasta das comandas (Chrome/Edge no computador). A pasta escolhida fica lembrada neste navegador.
+let pastaComandas = null;
+function guardaPasta(acao, valor) {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open('bookafe-comanda', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('k');
+      r.onsuccess = () => { const st = r.result.transaction('k', acao === 'get' ? 'readonly' : 'readwrite').objectStore('k');
+        const q = acao === 'get' ? st.get('pasta') : st.put(valor, 'pasta'); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); };
+      r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+// Salva o arquivo na pasta escolhida; se não houver pasta ou permissão, baixa (Downloads). Devolve onde salvou.
+async function salvarCopia(nome, texto) {
+  if (pastaComandas) {
+    try {
+      const opt = { mode: 'readwrite' };
+      if (await pastaComandas.queryPermission(opt) !== 'granted' && await pastaComandas.requestPermission(opt) !== 'granted') throw new Error('sem permissão');
+      const w = await (await pastaComandas.getFileHandle(nome, { create: true })).createWritable();
+      await w.write(texto); await w.close();
+      return 'na pasta ' + pastaComandas.name;
+    } catch {}
+  }
+  const dl = await window.claude?.use?.('downloads').catch(() => null);
+  if (dl) { try { await dl.save({ filename: nome, data: texto }); return 'pelo download'; } catch { return ''; } }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([texto], { type: 'text/csv;charset=utf-8' })); a.download = nome;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return 'em Downloads';
 }
 
 // Formas de pagamento; '' = não informado
@@ -206,14 +252,30 @@ async function copiarTexto(txt) {
 }
 
 let avisoTimer;
-function avisar(msg) {
+function avisar(msg, ms = 3000) {
   const el = $('aviso'); el.textContent = msg;
-  clearTimeout(avisoTimer); avisoTimer = setTimeout(() => { el.textContent = ''; }, 3000);
+  clearTimeout(avisoTimer); avisoTimer = setTimeout(() => { el.textContent = ''; }, ms);
 }
 
 const $ = id => document.getElementById(id);
 let pessoas = [];
 $('data').value = hojeISO();
+const mostraPasta = () => { if (pastaComandas) $('pasta-hint').textContent = `Pasta escolhida: ${pastaComandas.name}. Cada comanda finalizada é salva nela.`; };
+if ('showDirectoryPicker' in window) {
+  guardaPasta('get').then(h => { if (h && !pastaComandas) { pastaComandas = h; mostraPasta(); } });
+  $('escolher-pasta').addEventListener('click', async () => {
+    try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite' }); await guardaPasta('put', pastaComandas); mostraPasta(); }
+    catch { /* escolha cancelada */ }
+  });
+} else {
+  $('escolher-pasta').hidden = true;
+  $('pasta-hint').textContent = 'Neste navegador não dá para escolher pasta: cada comanda finalizada vai para Downloads. No computador, use o Chrome para salvar direto em E:\\Bookafé.';
+}
+// Depois de finalizar: comanda nova em branco, mantendo data, chave Pix e pasta
+function novaComanda() {
+  pessoas = []; $('total').value = ''; $('nome').value = ''; $('nova-pag').value = '';
+  renderLista(); calcular(); $('total').focus();
+}
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
 $('nova-pag').append(...opcoesPagamento());
 
@@ -282,10 +344,15 @@ function calcularResultado() {
     <div class="breakdown"><div><span>Dividido entre ${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'}</span><span></span></div></div>
     <ul class="rows"></ul>
     <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>
-    <button type="button" class="btn" id="copiar-planilha">Copiar para a planilha</button>`;
+    <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
-    const ok = await copiarTexto(linhasPlanilha(dataBR($('data').value || hojeISO()), horaAgora(), total, pessoas));
-    avisar(ok ? 'Linhas copiadas. Na planilha, clique na primeira célula vazia da coluna Data e cole (Ctrl+V).' : 'Não foi possível copiar. Tente de novo.');
+    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
+    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes));
+    const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas));
+    // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
+    if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
+    novaComanda();
+    avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.', 12000);
   });
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
@@ -351,6 +418,8 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(linhasPlanilha('21/10/2026', '14:30', 20000, [{ nome: 'Kleber', pag: 'pix' }, { nome: '  ', pag: '' }])
      === '21/10/2026\t14:30\t200,00\tKleber\tPIX\n21/10/2026\t14:30\t200,00\tPessoa 2\tSem forma', 'linhas para a planilha');
   ok(dataBR('2026-10-21') === '21/10/2026', 'data no formato dd/mm/aaaa');
+  ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000])
+     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Parte (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
   ok(JSON.stringify(resumoPagamentos([], [])) === JSON.stringify([['PIX', 0], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 0]]), 'totais zerados mostram as quatro formas');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
