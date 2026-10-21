@@ -90,6 +90,9 @@ ul.people .pvalor { font-family: var(--f-num) }
 .totais div:first-child { border-top: 0 }
 .totais span:last-child { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap }
 .totais .geral { border-top: 2px solid var(--line); font-weight: 700; font-size: 1.1rem }
+.totais .dia { border-top: 3px double var(--accent); color: var(--accent); margin-top: 6px }
+.totais p.label { margin: 0 0 4px }
+.totais .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
@@ -144,7 +147,7 @@ ul.people .pvalor { font-family: var(--f-num) }
     <section aria-labelledby="h-res" class="result">
       <h2 id="h-res">Quanto cada um paga</h2>
       <div class="panel" id="resultado" aria-live="polite"></div>
-      <h2 id="h-totais">Total por forma de pagamento</h2>
+      <h2 id="h-totais">Total</h2>
       <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
@@ -236,11 +239,14 @@ async function salvarCopia(nome, texto) {
 
 // Formas de pagamento; '' = não informado
 const PAGAMENTOS = { pix: 'PIX', debito: 'Débito', credito: 'Crédito', dinheiro: 'Dinheiro' };
-// Soma das partes por forma de pagamento: as quatro formas sempre, "Não informado" só se houver
-function resumoPagamentos(formas, partes) {
-  const soma = Object.fromEntries(Object.keys(PAGAMENTOS).map(k => [k, 0]));
-  formas.forEach((f, i) => { const k = f in PAGAMENTOS ? f : ''; soma[k] = (soma[k] || 0) + partes[i]; });
-  return [...Object.keys(PAGAMENTOS), ''].filter(k => k in soma).map(k => [k ? PAGAMENTOS[k] : 'Não informado', soma[k]]);
+// Quanto ficou em cada forma numa comanda ('' = sem forma). O troco sai do dinheiro primeiro (volta em espécie),
+// depois das outras formas, para o total nunca contar o que foi devolvido.
+function liquidoPorForma(formas, partes, troco) {
+  const s = {};
+  formas.forEach((f, i) => { const k = f in PAGAMENTOS ? f : ''; s[k] = (s[k] || 0) + partes[i]; });
+  for (const k of ['dinheiro', 'pix', 'debito', 'credito', '']) { const tira = Math.min(troco, s[k] || 0); s[k] = (s[k] || 0) - tira; troco -= tira; }
+  for (const k of Object.keys(s)) if (!s[k]) delete s[k];
+  return s;
 }
 
 // Mensagem de cobrança pronta para colar no WhatsApp. A chave Pix não é guardada em lugar nenhum.
@@ -280,6 +286,21 @@ if ('showDirectoryPicker' in window) {
   $('escolher-pasta').hidden = true;
   $('pasta-hint').textContent = 'Neste navegador não dá para escolher pasta: cada comanda finalizada vai para Downloads. No computador, use o Chrome para salvar direto em E:\\Bookafé.';
 }
+// Total do dia: soma do valor pago (menos troco) das comandas finalizadas, guardado no navegador por data (não some ao abrir comanda nova)
+const memoriaDia = {};
+const chaveDia = iso => 'bookafe-total-dia-' + iso;
+function lerDia(iso) {
+  try { const v = JSON.parse(localStorage.getItem(chaveDia(iso))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
+  return memoriaDia[iso] || { centavos: 0, comandas: 0, formas: {} };
+}
+function gravarDia(iso, v) { memoriaDia[iso] = v; try { localStorage.setItem(chaveDia(iso), JSON.stringify(v)); } catch {} }
+function somarDia(iso, porForma) {
+  const d = lerDia(iso), formas = { ...(d.formas || {}) };
+  let soma = 0;
+  for (const [k, v] of Object.entries(porForma)) { formas[k] = (formas[k] || 0) + v; soma += v; }
+  gravarDia(iso, { centavos: d.centavos + soma, comandas: d.comandas + 1, formas });
+}
+const zerarDia = iso => { delete memoriaDia[iso]; try { localStorage.removeItem(chaveDia(iso)); } catch {} };
 // Depois de finalizar: comanda nova em branco, mantendo data, chave Pix e pasta
 function novaComanda() {
   pessoas = []; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
@@ -324,20 +345,31 @@ function renderLista() {
   });
 }
 
-// Quadro de totais: PIX, Débito, Crédito, Dinheiro, Total geral e, se houver, Falta pagar ou Troco
-function renderTotais(partes, r) {
+// Quadro "Total": acumulado do dia (comandas finalizadas) em PIX, Débito, Crédito, Dinheiro e a soma de tudo
+function renderTotais() {
   const box = $('totais'), linha = (a, b, cls) => {
     const d = document.createElement('div'); if (cls) d.className = cls;
     d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: fmt(b) }));
     return d;
   };
-  const itens = resumoPagamentos(pessoas.map(p => p.pag).slice(0, partes.length), partes);
-  box.replaceChildren(...itens.map(([forma, v]) => linha(forma === 'Não informado' ? 'Sem forma de pagamento' : 'Total em ' + forma, v)), linha('Total geral', partes.reduce((a, b) => a + b, 0), 'geral'));
-  if (r?.falta) box.append(linha('Falta pagar', r.falta, 'geral'));
-  if (r?.troco) box.append(linha('Troco', r.troco, 'geral'));
+  const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {};
+  box.replaceChildren(
+    Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
+    ...Object.entries(PAGAMENTOS).map(([k, nome]) => linha('Total do dia em ' + nome, f[k] || 0)),
+    ...(f[''] ? [linha('Total do dia sem forma de pagamento', f[''])] : []),
+    linha('Total do dia', dia.centavos, 'geral dia'));
+  if (dia.comandas) {
+    const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
+    z.addEventListener('click', () => {
+      if (z.dataset.armado) { zerarDia(iso); calcular(); avisar('Total do dia zerado.'); return; }
+      z.dataset.armado = '1'; z.textContent = 'Toque de novo para zerar';
+      setTimeout(() => { if (z.isConnected) { delete z.dataset.armado; z.textContent = 'Zerar total do dia'; } }, 4000);
+    });
+    box.append(z);
+  }
 }
 
-function calcular() { const r = calcularResultado(); renderTotais(r?.partes || [], r); }
+function calcular() { calcularResultado(); renderTotais(); }
 
 function calcularResultado() {
   const out = $('resultado');
@@ -363,6 +395,7 @@ function calcularResultado() {
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
+    somarDia(iso, liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco)); // o troco volta para o cliente: entra no dia só o que ficou
     novaComanda();
     avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
@@ -428,8 +461,10 @@ if (/[?&]teste\b/.test(location.search)) {
      && mensagemCobranca('Ana', 123456, '  ana@ex.com ') === `Oi, Ana! A sua parte da conta do bar ficou em ${real}. Pix: ana@ex.com. Obrigado!`
      && mensagemCobranca('Bruno', 10258, '   ') === `Oi, Bruno! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`
      && mensagemCobranca('', 10258, '') === `Oi! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, com e sem nome, em reais');
-  ok(JSON.stringify(resumoPagamentos(['dinheiro', 'pix', '', 'pix', 'xyz'], [100, 200, 300, 400, 500]))
-     === JSON.stringify([['PIX', 600], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 100], ['Não informado', 800]]), 'resumo por forma de pagamento');
+  ok(JSON.stringify(liquidoPorForma(['dinheiro', 'pix', '', 'pix', 'xyz'], [100, 200, 300, 400, 500], 0))
+     === JSON.stringify({ dinheiro: 100, pix: 600, '': 800 }), 'soma por forma de pagamento');
+  ok(JSON.stringify(liquidoPorForma(['pix', 'dinheiro'], [3000, 3000], 1000)) === JSON.stringify({ pix: 3000, dinheiro: 2000 }), 'troco sai do dinheiro');
+  ok(JSON.stringify(liquidoPorForma(['pix', 'dinheiro'], [5000, 500], 1000)) === JSON.stringify({ pix: 4500 }), 'troco maior que o dinheiro sai também do PIX');
   ok(linhasPlanilha('21/10/2026', '14:30', 20000, [{ nome: 'Kleber', pag: 'pix' }, { nome: '  ', pag: '' }], [8000, 12000])
      === '21/10/2026\t14:30\t200,00\tKleber\tPIX\t80,00\n21/10/2026\t14:30\t200,00\tPessoa 2\tSem forma\t120,00', 'linhas para a planilha com o valor pago');
   const pg = (t, v) => { const x = pagar(t, v); return `${x.partes}|falta ${x.falta}|troco ${x.troco}`; };
@@ -441,7 +476,9 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(dataBR('2026-10-21') === '21/10/2026', 'data no formato dd/mm/aaaa');
   ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000])
      === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
-  ok(JSON.stringify(resumoPagamentos([], [])) === JSON.stringify([['PIX', 0], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 0]]), 'totais zerados mostram as quatro formas');
+  zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
+  const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
+  ok(d99.centavos === 12550 && d99.comandas === 2 && d99.formas.pix === 8550 && d99.formas.credito === 4000 && lerDia('1999-01-01').centavos === 0, 'total do dia por forma acumula e zera');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
