@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Racha da Comanda</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Calculadora para dividir a conta do bar: comida para todos, bebida só para quem bebeu, taxa de serviço sobre cada parte.">
+<meta name="description" content="Calculadora para dividir a conta do bar: comida para todos, bebida só para quem bebeu.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
@@ -91,7 +91,7 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 <div class="wrap">
   <header>
     <h1>Racha da Comanda</h1>
-    <p>Comida e taxa de serviço dividem entre todos. Bebida alcoólica divide só entre quem bebeu. A taxa incide sobre a parte de cada um.</p>
+    <p>Comida divide entre todos. Bebida alcoólica divide só entre quem bebeu.</p>
   </header>
 
   <div class="grid">
@@ -107,12 +107,6 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
           <label for="bebida">Total das bebidas alcoólicas</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="bebida" inputmode="decimal" autocomplete="off" value="96,50" aria-describedby="bebida-err"></div>
           <div class="err" id="bebida-err"></div>
-        </div>
-        <div class="field">
-          <label for="taxa">Taxa de serviço (%)</label>
-          <div class="money"><span aria-hidden="true">%</span><input type="text" id="taxa" inputmode="decimal" autocomplete="off" value="10" aria-describedby="taxa-hint taxa-err"></div>
-          <div class="hint" id="taxa-hint">Padrão de 10%. Use 0 se o bar não cobrou.</div>
-          <div class="err" id="taxa-err"></div>
         </div>
         <div class="field">
           <label for="pix">Chave Pix de quem pagou a conta</label>
@@ -160,21 +154,20 @@ function parseValor(txt) {
   return Number(i) * 100 + Number((d + '00').slice(0, 2));
 }
 
-// Núcleo: tudo em inteiros. taxaBp = taxa em centésimos de ponto percentual (10% = 1000).
-// Cada parte exata = (comida/n + bebida/k se bebeu) * (1 + taxa). O total arredonda uma vez;
+// Núcleo: tudo em centavos inteiros. Cada parte exata = comida/n + bebida/k se bebeu;
 // os centavos que sobram do arredondamento para baixo vão para as maiores frações (maior resto).
-function dividir(comida, bebida, taxaBp, bebeu) {
+function dividir(comida, bebida, bebeu) {
   const n = bebeu.length, k = bebeu.filter(Boolean).length;
   if (n === 0) throw new Error('Adicione pelo menos uma pessoa.');
   if (bebida > 0 && k === 0) throw new Error('Há valor de bebida, mas ninguém está marcado como "bebeu".');
-  const kk = Math.max(k, 1), fator = 10000 + taxaBp, den = n * kk * 10000;
-  const num = bebeu.map(b => (comida * kk + (b ? bebida * n : 0)) * fator);
-  const total = Math.floor(((comida + bebida) * fator * 2 + 10000) / 20000); // meio para cima
+  const kk = Math.max(k, 1), den = n * kk;
+  const num = bebeu.map(b => comida * kk + (b ? bebida * n : 0));
+  const total = comida + bebida;
   const partes = num.map(x => Math.floor(x / den));
   let sobra = total - partes.reduce((a, b) => a + b, 0);
   num.map((x, i) => [x % den, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
      .forEach(([, i]) => { if (sobra > 0) { partes[i]++; sobra--; } });
-  return { partes, total, servico: total - comida - bebida };
+  return { partes, total };
 }
 
 // Mensagem de cobrança pronta para colar no WhatsApp. A chave Pix não é guardada em lugar nenhum.
@@ -210,7 +203,7 @@ function campo(id, rotulo, max) {
   const el = $(id), v = parseValor(el.value);
   let msg = '';
   if (v === null) msg = el.value.trim() === '' ? `Informe ${rotulo} (use 0 se não houver).` : `Valor inválido. Use números com até 2 casas, ex.: 123,45.`;
-  else if (v > max) msg = `Valor alto demais. O limite é ${id === 'taxa' ? '100%' : fmt(max)}.`;
+  else if (v > max) msg = `Valor alto demais. O limite é ${fmt(max)}.`;
   el.setAttribute('aria-invalid', msg ? 'true' : 'false');
   $(id + '-err').textContent = msg;
   return msg ? null : v;
@@ -238,10 +231,9 @@ function calcular() {
   const out = $('resultado');
   const comida = campo('comida', 'o total da comida', MAX_CENTS);
   const bebida = campo('bebida', 'o total das bebidas', MAX_CENTS);
-  const taxa = campo('taxa', 'a taxa de serviço', 10000); // em "centavos de %": 100% = 10000
-  if (comida === null || bebida === null || taxa === null) { out.innerHTML = '<div class="alert">Corrija os campos marcados para ver a divisão.</div>'; return; }
+  if (comida === null || bebida === null) { out.innerHTML = '<div class="alert">Corrija os campos marcados para ver a divisão.</div>'; return; }
   let r;
-  try { r = dividir(comida, bebida, taxa, pessoas.map(p => p.bebeu)); }
+  try { r = dividir(comida, bebida, pessoas.map(p => p.bebeu)); }
   catch (e) { out.replaceChildren(Object.assign(document.createElement('div'), { className: 'alert', textContent: e.message })); return; }
   const soma = r.partes.reduce((a, b) => a + b, 0);
   out.innerHTML = `
@@ -249,7 +241,6 @@ function calcular() {
     <div class="breakdown">
       <div><span>Comida</span><span>${fmt(comida)}</span></div>
       <div><span>Bebidas alcoólicas</span><span>${fmt(bebida)}</span></div>
-      <div><span>Serviço (${(taxa / 100).toLocaleString('pt-BR')}%)</span><span>${fmt(r.servico)}</span></div>
     </div>
     <ul class="rows"></ul>
     <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>`;
@@ -289,24 +280,24 @@ renderLista(); calcular();
 if (/[?&]teste\b/.test(location.search)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
   const soma = a => a.reduce((x, y) => x + y, 0);
-  let r = dividir(10000, 0, 1000, [false, false, false]);
-  ok(r.total === 11000 && soma(r.partes) === 11000, 'R$100 + 10% entre 3 soma R$110,00');
-  ok(JSON.stringify(r.partes) === '[3667,3667,3666]', 'sobra de centavos vai para os primeiros: ' + r.partes);
-  r = dividir(18000, 9650, 1000, [true, true, false, false]);
-  ok(soma(r.partes) === r.total && r.total === 30415, 'exemplo da página confere: ' + r.total);
-  ok(r.partes[0] - r.partes[2] === 5308 || r.partes[0] - r.partes[2] === 5307, 'quem bebeu paga a bebida + 10%');
-  r = dividir(0, 5000, 0, [true, false]);
-  ok(r.partes[0] === 5000 && r.partes[1] === 0, 'bebida só para quem bebeu, sem taxa');
-  r = dividir(1, 0, 0, [false, false, false]);
+  let r = dividir(10000, 0, [false, false, false]);
+  ok(r.total === 10000 && soma(r.partes) === 10000, 'R$100 entre 3 soma R$100,00, sem taxa');
+  ok(JSON.stringify(r.partes) === '[3334,3333,3333]', 'sobra de centavos vai para os primeiros: ' + r.partes);
+  r = dividir(18000, 9650, [true, true, false, false]);
+  ok(soma(r.partes) === r.total && r.total === 27650, 'exemplo da página confere: ' + r.total);
+  ok(JSON.stringify(r.partes) === '[9325,9325,4500,4500]', 'quem bebeu paga comida/4 + bebida/2: ' + r.partes);
+  r = dividir(0, 5000, [true, false]);
+  ok(r.partes[0] === 5000 && r.partes[1] === 0, 'bebida só para quem bebeu');
+  r = dividir(1, 0, [false, false, false]);
   ok(JSON.stringify(r.partes) === '[1,0,0]', '1 centavo não se multiplica nem some');
   for (let t = 0; t < 300; t++) {
     const n = 1 + (t % 9), bb = Array.from({ length: n }, (_, i) => (i * 7 + t) % 3 === 0);
-    const c = (t * 7919) % 500000, d = bb.some(Boolean) ? (t * 104729) % 300000 : 0, tx = (t * 37) % 2001;
-    const x = dividir(c, d, tx, bb);
-    if (soma(x.partes) !== x.total || x.partes.some(v => v < 0)) { ok(false, `aleatório ${t}`); break; }
+    const c = (t * 7919) % 500000, d = bb.some(Boolean) ? (t * 104729) % 300000 : 0;
+    const x = dividir(c, d, bb);
+    if (soma(x.partes) !== x.total || x.total !== c + d || x.partes.some(v => v < 0)) { ok(false, `aleatório ${t}`); break; }
     if (t === 299) ok(true, '300 casos variados: soma sempre igual ao total');
   }
-  let erro = ''; try { dividir(100, 100, 1000, [false]); } catch (e) { erro = e.message; }
+  let erro = ''; try { dividir(100, 100, [false]); } catch (e) { erro = e.message; }
   ok(erro.includes('ninguém'), 'bebida sem ninguém que bebeu gera erro');
   ok(parseValor('1.234,56') === 123456 && parseValor('1234.5') === 123450 && parseValor('1.234') === 123400, 'lê formatos pt-BR');
   ok(parseValor('-5') === null && parseValor('abc') === null && parseValor('1,234') === null, 'rejeita entradas inválidas');
