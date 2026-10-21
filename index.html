@@ -23,15 +23,19 @@
   --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --f-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  /* cor fixa de cada forma de pagamento no dashboard */
+  --c-pix: #1f7a73; --c-debito: #3559a8; --c-credito: #b8620f; --c-dinheiro: #2e7d3a; --c-sem: #8a6e66;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
   --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
-  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark } }
+  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark;
+  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1 } }
 :root[data-theme="dark"] {
   --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
   --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
-  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark }
+  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark;
+  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1 }
 
 * { box-sizing: border-box }
 [hidden] { display: none !important }
@@ -98,6 +102,38 @@ ul.people .pvalor { font-family: var(--f-num) }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 @media (prefers-reduced-motion: no-preference) { button { transition: filter .15s } button:hover { filter: brightness(1.08) } }
+/* Abas Comanda / Resultados */
+.abas { display: flex; gap: 8px; border-bottom: 2px solid var(--line) }
+.abas button { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; padding: 0 18px; font-weight: 700; margin-bottom: -2px }
+.abas button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); background: var(--surface) }
+/* Dashboard */
+.filtros-res { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end }
+.filtros-res label { display: grid; gap: 4px; font-weight: 700 }
+.filtros-res input { min-width: 11em }
+.filtros-res .hint { flex-basis: 100%; margin: 0 }
+.res-grid { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start }
+@media (max-width: 760px) { .res-grid { grid-template-columns: minmax(0, 1fr) } }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px }
+.card-res { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 2px; min-width: 0 }
+.card-res span { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700 }
+.card-res strong { font-family: var(--f-num); font-size: clamp(.95rem, 2.6vw, 1.25rem); overflow-wrap: anywhere }
+ul.barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px }
+ul.barras li { display: grid; grid-template-columns: 7em minmax(0, 1fr) 7.5em; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 6px; cursor: default }
+ul.barras li:hover, ul.barras li:focus-visible, ul.barras li.ativa { background: var(--accent-soft) }
+ul.barras li:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px }
+ul.barras .val { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; text-align: right }
+ul.barras li.empty { display: block }
+@media (max-width: 520px) {
+  ul.barras li { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px }
+  ul.barras .trilho { grid-column: 1 / -1; grid-row: 2 }
+  ul.barras .val { grid-column: 2; grid-row: 1 }
+}
+.trilho { height: 12px; border-radius: 999px; background: var(--bg); overflow: hidden; display: flex }
+.trilho i { display: block; height: 100% }
+.f-pix { background: var(--c-pix) } .f-debito { background: var(--c-debito) } .f-credito { background: var(--c-credito) }
+.f-dinheiro { background: var(--c-dinheiro) } .f-sem { background: var(--c-sem) }
+.bolinha { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle }
+.dica { position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 32px)); background: var(--ink); color: var(--bg); padding: 8px 10px; border-radius: 8px; font-size: .9rem; line-height: 1.35; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); white-space: pre-line }
 </style>
 
 <div class="wrap">
@@ -106,7 +142,28 @@ ul.people .pvalor { font-family: var(--f-num) }
     <p>Digite a data e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
   </header>
 
-  <div class="grid">
+  <nav class="abas" role="tablist" aria-label="Telas do app">
+    <button type="button" role="tab" id="aba-comanda" aria-selected="true" aria-controls="tela-comanda">Comanda</button>
+    <button type="button" role="tab" id="aba-resultados" aria-selected="false" aria-controls="tela-resultados" tabindex="-1">Resultados</button>
+  </nav>
+
+  <section id="tela-resultados" role="tabpanel" aria-labelledby="aba-resultados" hidden>
+    <div class="panel filtros-res">
+      <label for="res-dia">Dia <input type="date" id="res-dia" class="plain"></label>
+      <label for="res-mes">Mês <input type="month" id="res-mes" class="plain"></label>
+      <button type="button" class="btn-ghost" id="res-ler">Ler comandas da pasta</button>
+      <p class="hint" id="res-fonte" aria-live="polite"></p>
+    </div>
+    <div class="res-grid" style="margin-top:24px">
+      <section class="panel" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
+      <section class="panel" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
+    </div>
+    <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Dias do mês</h2><ul class="barras" id="dias-mes"></ul></section>
+    <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem.</p>
+  </section>
+  <div class="dica" id="dica" role="tooltip" hidden></div>
+
+  <div class="grid" id="tela-comanda" role="tabpanel" aria-labelledby="aba-comanda">
     <section aria-labelledby="h-conta">
       <h2 id="h-conta">Conta</h2>
       <form class="panel" id="form-conta" novalidate>
@@ -437,6 +494,191 @@ $('form-add').addEventListener('submit', e => {
 
 renderLista(); calcular();
 
+// ===================== Resultados (dashboard do dia e do mês) =====================
+const FORMA_DO_TEXTO = { 'PIX': 'pix', 'Débito': 'debito', 'Crédito': 'credito', 'Dinheiro': 'dinheiro', 'Sem forma': '' };
+const CLASSE_FORMA = { pix: 'f-pix', debito: 'f-debito', credito: 'f-credito', dinheiro: 'f-dinheiro', '': 'f-sem' };
+const nomeForma = k => PAGAMENTOS[k] || 'Sem forma de pagamento';
+const pct = (v, t) => (t ? v / t * 100 : 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+
+// Uma linha de CSV com ";" e aspas
+function camposCsv(linha) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < linha.length; i++) {
+    const c = linha[i];
+    if (q) { if (c === '"') { if (linha[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === ';') { out.push(cur); cur = ''; } else cur += c;
+  }
+  out.push(cur); return out;
+}
+// Arquivo "Comanda ....csv" -> comandas [{ iso, total, formas, valores }]; null se o arquivo não tem o formato do app
+function comandasDoCsv(texto) {
+  const linhas = texto.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (linhas.length < 2 || !/^Data;Comanda;Total da conta/.test(linhas[0])) return null;
+  const grupos = new Map();
+  for (const l of linhas.slice(1)) {
+    const [data, comanda, totalTxt, , formaTxt, valorTxt] = camposCsv(l);
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(data || ''), total = parseValor(totalTxt || ''), valor = parseValor(valorTxt || '');
+    if (!m || total === null || valor === null || !(formaTxt in FORMA_DO_TEXTO)) return null;
+    const iso = `${m[3]}-${m[2]}-${m[1]}`, chave = `${iso}|${comanda}|${total}`;
+    if (!grupos.has(chave)) grupos.set(chave, { iso, total, formas: [], valores: [] });
+    const g = grupos.get(chave); g.formas.push(FORMA_DO_TEXTO[formaTxt]); g.valores.push(valor);
+  }
+  return [...grupos.values()];
+}
+// Comandas -> Map(iso -> { centavos, comandas, formas }) com o troco descontado (mesma regra do quadro Total)
+function diasDasComandas(lista) {
+  const dias = new Map();
+  for (const c of lista) {
+    const pago = c.valores.reduce((a, b) => a + b, 0), liq = liquidoPorForma(c.formas, c.valores, Math.max(pago - c.total, 0));
+    const d = dias.get(c.iso) || { centavos: 0, comandas: 0, formas: {} };
+    for (const [k, v] of Object.entries(liq)) { d.formas[k] = (d.formas[k] || 0) + v; d.centavos += v; }
+    d.comandas++; dias.set(c.iso, d);
+  }
+  return dias;
+}
+// Soma vários dias (ex.: todos do mês)
+function somaDias(lista) {
+  const s = { centavos: 0, comandas: 0, formas: {} };
+  for (const d of lista) { s.centavos += d.centavos; s.comandas += d.comandas; for (const [k, v] of Object.entries(d.formas || {})) s.formas[k] = (s.formas[k] || 0) + v; }
+  return s;
+}
+// Plano B: totais do dia guardados neste navegador
+function diasDoNavegador() {
+  const dias = new Map();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const m = /^bookafe-total-dia-(\d{4}-\d{2}-\d{2})$/.exec(localStorage.key(i) || '');
+      if (m) { const v = lerDia(m[1]); if (v.comandas) dias.set(m[1], { centavos: v.centavos, comandas: v.comandas, formas: v.formas || {} }); }
+    }
+  } catch {}
+  for (const [iso, v] of Object.entries(memoriaDia)) if (!dias.has(iso) && v.comandas) dias.set(iso, v);
+  return dias;
+}
+
+let dadosRes = new Map(), fonteRes = '';
+// Lê a pasta (se liberada) e junta com o navegador: para cada dia, vale a pasta; dias que só existem no navegador entram por ele.
+async function carregarResultados(pedirPermissao) {
+  const nav = diasDoNavegador();
+  dadosRes = new Map(nav); fonteRes = nav.size ? 'Fonte: totais guardados neste navegador.' : 'Ainda não há comandas finalizadas neste navegador.';
+  if (pastaComandas) {
+    try {
+      const opt = { mode: 'read' };
+      let perm = await pastaComandas.queryPermission(opt);
+      if (perm !== 'granted' && pedirPermissao) perm = await pastaComandas.requestPermission(opt);
+      if (perm === 'granted') {
+        const lidas = []; let arquivos = 0, ignorados = 0;
+        for await (const [nome, h] of pastaComandas.entries()) {
+          if (h.kind !== 'file' || !/^Comanda .*\.csv$/i.test(nome)) continue;
+          arquivos++;
+          const c = comandasDoCsv(await (await h.getFile()).text());
+          if (c) lidas.push(...c); else ignorados++;
+        }
+        const daPasta = diasDasComandas(lidas);
+        for (const [iso, d] of daPasta) dadosRes.set(iso, d);
+        const soNav = [...nav.keys()].filter(iso => !daPasta.has(iso)).length;
+        fonteRes = `Fonte: ${lidas.length} comanda${lidas.length === 1 ? '' : 's'} de ${arquivos} arquivo${arquivos === 1 ? '' : 's'} da pasta ${pastaComandas.name}`
+          + (ignorados ? ` (${ignorados} arquivo${ignorados === 1 ? '' : 's'} com formato diferente ignorado${ignorados === 1 ? '' : 's'})` : '')
+          + (soNav ? ` + ${soNav} dia${soNav === 1 ? '' : 's'} só deste navegador.` : '.');
+      } else fonteRes += ' Toque em "Ler comandas da pasta" para incluir todas as comandas salvas.';
+    } catch { fonteRes += ' Não foi possível ler a pasta das comandas.'; }
+  } else if ('showDirectoryPicker' in window) fonteRes += ' Para ver todas as comandas salvas, escolha a pasta na aba Comanda (Pasta das comandas).';
+  renderResultados();
+}
+
+function renderResultados() {
+  const dia = $('res-dia').value || hojeISO(), mes = $('res-mes').value || dia.slice(0, 7);
+  const rDia = dadosRes.get(dia) || { centavos: 0, comandas: 0, formas: {} };
+  const diasMes = [...dadosRes.entries()].filter(([iso]) => iso.startsWith(mes + '-')).sort(([a], [b]) => a < b ? -1 : 1);
+  const rMes = somaDias(diasMes.map(([, d]) => d));
+  const [ano, mm] = mes.split('-'), nomeMes = new Date(+ano, +mm - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  $('res-fonte').textContent = fonteRes;
+  const cards = (box, r) => box.replaceChildren(...[['Total', fmt(r.centavos)], ['Comandas', String(r.comandas)], ['Ticket médio', fmt(r.comandas ? Math.round(r.centavos / r.comandas) : 0)]]
+    .map(([a, b]) => { const d = document.createElement('div'); d.className = 'card-res'; d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('strong'), { textContent: b })); return d; }));
+  // Linha com dica (porcentagem) para o mouse, o teclado e o toque
+  const linha = (rotulo, valor, segmentos, dica) => {
+    const li = document.createElement('li'); li.tabIndex = 0; li.dataset.dica = dica;
+    const nome = document.createElement('span'); nome.append(...rotulo);
+    const trilho = document.createElement('span'); trilho.className = 'trilho'; trilho.setAttribute('aria-hidden', 'true');
+    for (const [cls, w] of segmentos) { const i = document.createElement('i'); i.className = cls; i.style.width = w + '%'; trilho.append(i); }
+    li.append(nome, trilho, Object.assign(document.createElement('span'), { className: 'val', textContent: fmt(valor) }), Object.assign(document.createElement('span'), { className: 'sr', textContent: ' — ' + dica }));
+    return li;
+  };
+  const formas = (box, r, quando) => {
+    const ks = [...Object.keys(PAGAMENTOS), ...(r.formas[''] ? [''] : [])];
+    box.replaceChildren(...ks.map(k => {
+      const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
+      return linha([bol, nomeForma(k)], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}`);
+    }));
+    if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
+  };
+  cards($('cards-dia'), rDia); formas($('formas-dia'), rDia, 'do dia');
+  cards($('cards-mes'), rMes); formas($('formas-mes'), rMes, 'do mês');
+  $('h-res-dia').textContent = `Resultado do dia ${dataBR(dia)}`;
+  $('h-res-mes').textContent = `Resultado de ${nomeMes}`;
+  $('h-dias').textContent = `Dias de ${nomeMes}`;
+  const maior = Math.max(1, ...diasMes.map(([, d]) => d.centavos)), ul = $('dias-mes');
+  ul.replaceChildren(...diasMes.map(([iso, d]) => {
+    const sem = new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+    const ks = [...Object.keys(PAGAMENTOS), ''].filter(k => d.formas[k]);
+    const segs = ks.map(k => [CLASSE_FORMA[k], d.formas[k] / maior * 100]);
+    const dica = `${dataBR(iso)} (${sem}): ${pct(d.centavos, rMes.centavos)} do mês · ${d.comandas} comanda${d.comandas === 1 ? '' : 's'}\n`
+      + ks.map(k => `${nomeForma(k)}: ${pct(d.formas[k], d.centavos)} (${fmt(d.formas[k])})`).join('\n');
+    return linha([`${dataBR(iso).slice(0, 5)} ${sem}`], d.centavos, segs, dica);
+  }));
+  if (!diasMes.length) ul.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Nenhuma comanda neste mês.' }));
+}
+
+// Dica flutuante: mouse, teclado (foco) e toque
+(() => {
+  const dica = $('dica'), tela = $('tela-resultados');
+  const mostra = (li, x, y) => {
+    dica.textContent = li.dataset.dica; dica.hidden = false;
+    const r = dica.getBoundingClientRect();
+    dica.style.left = Math.max(8, Math.min(x + 14, innerWidth - r.width - 8)) + 'px';
+    dica.style.top = Math.max(8, (y + 18 + r.height > innerHeight) ? y - r.height - 12 : y + 18) + 'px';
+  };
+  const esconde = () => { dica.hidden = true; tela.querySelectorAll('li.ativa').forEach(l => l.classList.remove('ativa')); };
+  tela.addEventListener('pointermove', e => { const li = e.target.closest('li[data-dica]'); if (li && e.pointerType === 'mouse') mostra(li, e.clientX, e.clientY); });
+  tela.addEventListener('pointerout', e => { if (e.pointerType === 'mouse' && e.target.closest('li[data-dica]') && !e.relatedTarget?.closest?.('li[data-dica]')) esconde(); });
+  tela.addEventListener('click', e => { // toque no celular: abre/fecha a dica da linha
+    const li = e.target.closest('li[data-dica]'); if (!li) return esconde();
+    const ja = li.classList.contains('ativa'); esconde(); if (ja) return;
+    li.classList.add('ativa'); const r = li.getBoundingClientRect(); mostra(li, r.left + 8, r.bottom - 10);
+  });
+  tela.addEventListener('focusin', e => { const li = e.target.closest('li[data-dica]'); if (li) { const r = li.getBoundingClientRect(); mostra(li, r.left + 8, r.bottom - 10); } });
+  tela.addEventListener('focusout', esconde);
+  addEventListener('scroll', esconde, { passive: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') esconde(); });
+})();
+
+// Abas
+function abrirAba(qual) {
+  const res = qual === 'resultados';
+  $('aba-comanda').setAttribute('aria-selected', String(!res)); $('aba-resultados').setAttribute('aria-selected', String(res));
+  $('aba-comanda').tabIndex = res ? -1 : 0; $('aba-resultados').tabIndex = res ? 0 : -1;
+  $('tela-comanda').hidden = res; $('tela-resultados').hidden = !res;
+  if (res) {
+    if (!$('res-dia').value) $('res-dia').value = $('data').value || hojeISO();
+    if (!$('res-mes').value) $('res-mes').value = $('res-dia').value.slice(0, 7);
+    carregarResultados(false);
+  }
+}
+$('aba-comanda').addEventListener('click', () => abrirAba('comanda'));
+$('aba-resultados').addEventListener('click', () => abrirAba('resultados'));
+document.querySelector('.abas').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const prox = $('aba-comanda').getAttribute('aria-selected') === 'true' ? 'resultados' : 'comanda';
+  abrirAba(prox); $('aba-' + prox).focus();
+});
+$('res-dia').addEventListener('input', () => { if ($('res-dia').value) $('res-mes').value = $('res-dia').value.slice(0, 7); renderResultados(); });
+$('res-mes').addEventListener('input', renderResultados);
+if (!('showDirectoryPicker' in window)) $('res-ler').hidden = true;
+$('res-ler').addEventListener('click', () => {
+  if (!pastaComandas) { avisar('Escolha antes a pasta das comandas na aba Comanda.'); abrirAba('comanda'); $('escolher-pasta').focus(); return; }
+  carregarResultados(true);
+});
+
 // Autoteste: abra a página com ?teste na URL.
 if (/[?&]teste\b/.test(location.search)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
@@ -480,6 +722,17 @@ if (/[?&]teste\b/.test(location.search)) {
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
   ok(d99.centavos === 12550 && d99.comandas === 2 && d99.formas.pix === 8550 && d99.formas.credito === 4000 && lerDia('1999-01-01').centavos === 0, 'total do dia por forma acumula e zera');
+  // Dashboard: CSV -> comandas -> dias -> mês, com troco
+  const csv1 = csvComanda('21/10/2026', '14:00:00', 20000, [{ nome: 'A', pag: 'credito' }, { nome: 'B;C', pag: 'pix' }], [12000, 8000]);
+  const csv2 = csvComanda('21/10/2026', '15:00:00', 5000, [{ nome: '', pag: 'dinheiro' }], [6000]);
+  const csv3 = csvComanda('22/10/2026', '10:00:00', 3000, [{ nome: '', pag: 'debito' }], [3000]);
+  const cms = [csv1, csv2, csv3].flatMap(comandasDoCsv);
+  ok(cms.length === 3 && cms[0].valores.join() === '12000,8000' && cms[0].formas.join() === 'credito,pix', 'lê a cópia da comanda (CSV)');
+  ok(comandasDoCsv('qualquer coisa') === null && comandasDoCsv('Data;Comanda;Total da conta (R$);P;F;V\r\n99/99;x;abc;P;PIX;1,00') === null, 'ignora arquivo com formato diferente');
+  const dd = diasDasComandas(cms), d21 = dd.get('2026-10-21'), mesOut = somaDias([...dd.values()]);
+  ok(d21.centavos === 25000 && d21.comandas === 2 && d21.formas.dinheiro === 5000 && d21.formas.pix === 8000, 'dia 21: troco sai do dinheiro (R$ 250,00)');
+  ok(mesOut.centavos === 28000 && mesOut.comandas === 3 && mesOut.formas.debito === 3000, 'mês: soma dos dias (R$ 280,00)');
+  ok(pct(8000, 25000) === '32,0%' && pct(0, 0) === '0,0%', 'porcentagem com uma casa');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
