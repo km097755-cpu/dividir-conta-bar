@@ -64,12 +64,13 @@ button { font: inherit; cursor: pointer; border-radius: 8px; min-height: 44px }
 .btn { background: var(--accent); color: var(--accent-ink); border: 0; padding: 0 16px; font-weight: 700 }
 .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); padding: 0 12px }
 .add { display: flex; flex-wrap: wrap; gap: 8px }
-.add input { flex: 1 1 12em }
+.add .money { flex: 1 1 12em }
 ul.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
 ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px }
-@media (max-width: 480px) { ul.people li { grid-template-columns: minmax(0, 1fr) auto } ul.people .pname { grid-column: 1 / -1 } }
+@media (max-width: 480px) { ul.people li { grid-template-columns: minmax(0, 1fr) auto } ul.people .pvalor { grid-column: 1 / -1 } }
+ul.people .pvalor { font-family: var(--f-num) }
+.falta { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 8px 12px; font-weight: 700; font-size: .95rem }
 .pag { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; min-height: 44px; padding: 0 8px }
-.pname { overflow-wrap: anywhere; font-weight: 700 }
 .empty { color: var(--muted); font-style: italic }
 .total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap }
 .total strong { font-family: var(--f-num); font-size: clamp(1.6rem, 6vw, 2.2rem); font-variant-numeric: tabular-nums }
@@ -98,7 +99,7 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 <div class="wrap">
   <header>
     <h1>Bookafé (Comanda)</h1>
-    <p>Digite a data e o total da conta e adicione cada pessoa na hora em que ela paga, com a forma de pagamento. A conta divide em partes iguais. No fim, use "Copiar para a planilha" e cole na planilha diária.</p>
+    <p>Digite a data e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
   </header>
 
   <div class="grid">
@@ -126,16 +127,16 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
         </div>
       </form>
 
-      <h2 id="h-pessoas">Quem pagou</h2>
+      <h2 id="h-pessoas">Pagamentos</h2>
       <div class="panel">
         <form class="add" id="form-add" novalidate>
-          <label for="nome" class="sr">Nome da pessoa</label>
-          <input type="text" id="nome" class="plain" placeholder="Nome (opcional)" autocomplete="off" maxlength="40" aria-describedby="nome-err">
+          <label for="novo-valor" class="sr">Valor pago (vazio = parte igual do que falta)</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="novo-valor" inputmode="decimal" placeholder="Valor (vazio = parte igual)" autocomplete="off" aria-describedby="valor-err"></div>
           <label for="nova-pag" class="sr">Forma de pagamento</label>
           <select id="nova-pag" class="pag"></select>
           <button class="btn" type="submit">Adicionar</button>
         </form>
-        <div class="err" id="nome-err" role="alert"></div>
+        <div class="err" id="valor-err" role="alert"></div>
         <ul class="people" id="lista" aria-labelledby="h-pessoas"></ul>
       </div>
     </section>
@@ -175,20 +176,28 @@ function dividir(total, n) {
   return { partes: Array.from({ length: n }, (_, i) => base + (i < sobra ? 1 : 0)), total };
 }
 
-// Para a planilha diária: uma linha por pessoa, separada por tabulação (Data, Comanda, Total da conta, Pessoa, Forma).
-// A planilha calcula a parte de cada um com a mesma regra de dividir().
+// Valor de cada pagamento: o digitado; os pagamentos sem valor dividem igualmente o que falta (nunca negativo)
+function pagar(total, valores) {
+  const fixo = valores.reduce((a, v) => a + (v ?? 0), 0), livres = valores.filter(v => v == null).length;
+  const auto = livres ? dividir(Math.max(total - fixo, 0), livres).partes : [];
+  let k = 0;
+  const partes = valores.map(v => v ?? auto[k++]), pago = partes.reduce((a, b) => a + b, 0);
+  return { partes, total, pago, falta: Math.max(total - pago, 0), troco: Math.max(pago - total, 0) };
+}
+
+// Para a planilha diária: uma linha por pagamento, separada por tabulação (Data, Comanda, Total da conta, Pessoa, Forma, Valor pago).
 const hojeISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const dataBR = iso => iso.split('-').reverse().join('/');
 const horaAgora = () => new Date().toTimeString().slice(0, 8);
 const reais = c => (c / 100).toFixed(2).replace('.', ',');
 // Nome seguro para Excel: sem tabulação/quebra e sem =, +, -, @ no começo (o Excel trataria como fórmula)
 const nomeSeguro = (p, i) => p.nome.replace(/[\t\r\n]/g, ' ').trim().replace(/^[=+\-@]+/, '').trim() || `Pessoa ${i + 1}`;
-function linhasPlanilha(data, comanda, totalCentavos, lista) {
-  return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma'].join('\t')).join('\n');
+function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
+  return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
 }
 // Cópia da comanda em CSV (abre no Excel): separador ";" e BOM para os acentos
 function csvComanda(data, comanda, totalCentavos, lista, partes) {
-  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Parte (R$)'],
+  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Valor pago (R$)'],
     ...lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])])];
   return '﻿' + linhas.map(l => l.map(v => /[;"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(';')).join('\r\n') + '\r\n';
 }
@@ -273,7 +282,7 @@ if ('showDirectoryPicker' in window) {
 }
 // Depois de finalizar: comanda nova em branco, mantendo data, chave Pix e pasta
 function novaComanda() {
-  pessoas = []; $('total').value = ''; $('nome').value = ''; $('nova-pag').value = '';
+  pessoas = []; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
@@ -289,35 +298,34 @@ function campo(id, rotulo, max) {
   return msg ? null : v;
 }
 
-// Nome é opcional (campo em branco mostra "Pessoa N"). O nome pode ser escrito em "Quem pagou" ou em "Quanto cada um paga"; copia para o outro campo sem redesenhar (não perde o cursor)
-function sincronizaNome(p, i, valor) {
-  p.nome = valor;
-  for (const id of ['nome-' + i, 'res-nome-' + i]) { const el = $(id); if (el && el.value !== valor) el.value = valor; }
-}
-
 function renderLista() {
   const ul = $('lista');
   ul.replaceChildren();
-  if (!pessoas.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Ninguém ainda. Toque em Adicionar para abrir uma linha para cada pessoa que pagar; o nome pode ficar em branco.'; ul.append(li); }
+  if (!pessoas.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Nenhum pagamento ainda. Digite o valor (ou deixe vazio para a parte igual), escolha a forma e toque em Adicionar.'; ul.append(li); }
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
-    const nome = Object.assign(document.createElement('input'), { type: 'text', className: 'plain pname', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
-    nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`); nome.id = 'nome-' + i;
-    nome.addEventListener('input', () => sincronizaNome(p, i, nome.value));
+    // Valor editável; vazio = parte igual do que falta pagar
+    const val = Object.assign(document.createElement('input'), { type: 'text', inputMode: 'decimal', id: 'valor-' + i, className: 'plain pvalor', value: p.valor == null ? '' : reais(p.valor), placeholder: 'R$ parte igual', autocomplete: 'off' });
+    val.setAttribute('aria-label', `Valor do pagamento ${i + 1} (vazio = parte igual)`);
+    val.addEventListener('input', () => {
+      const t = val.value.trim(), v = parseValor(t), ruim = t !== '' && (v === null || v > MAX_CENTS);
+      val.setAttribute('aria-invalid', ruim ? 'true' : 'false');
+      p.valor = t === '' || ruim ? null : v; calcular();
+    });
     const pag = document.createElement('select'); pag.className = 'pag'; pag.id = 'pag-' + i;
-    pag.setAttribute('aria-label', `Forma de pagamento da pessoa ${i + 1}`);
+    pag.setAttribute('aria-label', `Forma do pagamento ${i + 1}`);
     pag.append(...opcoesPagamento());
     pag.value = p.pag || '';
     pag.addEventListener('change', () => { p.pag = pag.value; calcular(); });
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn-ghost'; rm.textContent = 'Remover';
-    rm.setAttribute('aria-label', `Remover a pessoa ${i + 1}`);
-    rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('nome').focus(); });
-    li.append(nome, pag, rm); ul.append(li);
+    rm.setAttribute('aria-label', `Remover o pagamento ${i + 1}`);
+    rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('novo-valor').focus(); });
+    li.append(val, pag, rm); ul.append(li);
   });
 }
 
-// Quadro de totais embaixo de "Quem pagou": PIX, Débito, Crédito, Dinheiro e Total geral
-function renderTotais(partes) {
+// Quadro de totais: PIX, Débito, Crédito, Dinheiro, Total geral e, se houver, Falta pagar ou Troco
+function renderTotais(partes, r) {
   const box = $('totais'), linha = (a, b, cls) => {
     const d = document.createElement('div'); if (cls) d.className = cls;
     d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: fmt(b) }));
@@ -325,9 +333,11 @@ function renderTotais(partes) {
   };
   const itens = resumoPagamentos(pessoas.map(p => p.pag).slice(0, partes.length), partes);
   box.replaceChildren(...itens.map(([forma, v]) => linha(forma === 'Não informado' ? 'Sem forma de pagamento' : 'Total em ' + forma, v)), linha('Total geral', partes.reduce((a, b) => a + b, 0), 'geral'));
+  if (r?.falta) box.append(linha('Falta pagar', r.falta, 'geral'));
+  if (r?.troco) box.append(linha('Troco', r.troco, 'geral'));
 }
 
-function calcular() { renderTotais(calcularResultado() || []); }
+function calcular() { const r = calcularResultado(); renderTotais(r?.partes || [], r); }
 
 function calcularResultado() {
   const out = $('resultado');
@@ -336,23 +346,26 @@ function calcularResultado() {
   if ($('total').value.trim() === '') { $('total-err').textContent = ''; $('total').setAttribute('aria-invalid', 'false'); return dica('Digite o total da conta para ver a divisão.'); }
   const total = campo('total', 'o total da conta', MAX_CENTS);
   if (total === null) { out.innerHTML = '<div class="alert">Corrija o total da conta para ver a divisão.</div>'; return; }
-  if (!pessoas.length) return dica('Adicione as pessoas que pagaram para ver quanto cada uma paga.');
-  const r = dividir(total, pessoas.length);
-  const soma = r.partes.reduce((a, b) => a + b, 0);
+  if (!pessoas.length) return dica('Adicione os pagamentos para ver quanto cada um paga.');
+  const r = pagar(total, pessoas.map(p => p.valor));
+  const situacao = r.falta ? `<div class="falta">Pago: ${fmt(r.pago)} · Falta pagar: ${fmt(r.falta)}</div>`
+    : r.troco ? `<div class="falta">Pago: ${fmt(r.pago)} · Troco: ${fmt(r.troco)}</div>`
+    : `<div class="check">Pago: ${fmt(r.pago)} — conta fechada.</div>`;
   out.innerHTML = `
     <div class="total"><span class="label">Total da conta</span><strong>${fmt(r.total)}</strong></div>
-    <div class="breakdown"><div><span>Dividido entre ${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'}</span><span></span></div></div>
+    <div class="breakdown"><div><span>${pessoas.length} pagamento${pessoas.length === 1 ? '' : 's'}</span><span></span></div></div>
     <ul class="rows"></ul>
-    <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>
+    ${situacao}
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
     const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
     const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes));
-    const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas));
+    const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     novaComanda();
-    avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.', 12000);
+    avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
+      + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
   });
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
@@ -360,7 +373,7 @@ function calcularResultado() {
     const who = document.createElement('span'); who.className = 'who';
     const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
     nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
-    nome.addEventListener('input', () => sincronizaNome(p, i, nome.value));
+    nome.addEventListener('input', () => { p.nome = nome.value; }); // nome opcional; vazio = "Pessoa N"
     who.append(nome);
     if (PAGAMENTOS[p.pag]) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: PAGAMENTOS[p.pag] }));
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
@@ -372,18 +385,20 @@ function calcularResultado() {
     li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
     ul.append(li);
   });
-  return r.partes;
+  return r;
 }
 
 $('form-conta').addEventListener('input', calcular);
 $('form-conta').addEventListener('submit', e => e.preventDefault());
 $('form-add').addEventListener('submit', e => {
   e.preventDefault();
-  const el = $('nome'), nome = el.value.trim().replace(/\s+/g, ' ');
-  const msg = pessoas.length >= MAX_PESSOAS ? `O limite é de ${MAX_PESSOAS} pessoas.` : '';
-  $('nome-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  const el = $('novo-valor'), t = el.value.trim(), valor = t === '' ? null : parseValor(t);
+  const msg = pessoas.length >= MAX_PESSOAS ? `O limite é de ${MAX_PESSOAS} pagamentos.`
+    : t !== '' && valor === null ? 'Valor inválido. Use números com até 2 casas, ex.: 50,00 (ou deixe vazio para a parte igual).'
+    : valor > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.` : '';
+  $('valor-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
   if (msg) return;
-  pessoas.push({ nome, pag: $('nova-pag').value }); el.value = ''; $('nova-pag').value = ''; renderLista(); calcular(); el.focus();
+  pessoas.push({ nome: '', valor, pag: $('nova-pag').value }); el.value = ''; $('nova-pag').value = ''; renderLista(); calcular(); el.focus();
 });
 
 renderLista(); calcular();
@@ -415,11 +430,17 @@ if (/[?&]teste\b/.test(location.search)) {
      && mensagemCobranca('', 10258, '') === `Oi! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, com e sem nome, em reais');
   ok(JSON.stringify(resumoPagamentos(['dinheiro', 'pix', '', 'pix', 'xyz'], [100, 200, 300, 400, 500]))
      === JSON.stringify([['PIX', 600], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 100], ['Não informado', 800]]), 'resumo por forma de pagamento');
-  ok(linhasPlanilha('21/10/2026', '14:30', 20000, [{ nome: 'Kleber', pag: 'pix' }, { nome: '  ', pag: '' }])
-     === '21/10/2026\t14:30\t200,00\tKleber\tPIX\n21/10/2026\t14:30\t200,00\tPessoa 2\tSem forma', 'linhas para a planilha');
+  ok(linhasPlanilha('21/10/2026', '14:30', 20000, [{ nome: 'Kleber', pag: 'pix' }, { nome: '  ', pag: '' }], [8000, 12000])
+     === '21/10/2026\t14:30\t200,00\tKleber\tPIX\t80,00\n21/10/2026\t14:30\t200,00\tPessoa 2\tSem forma\t120,00', 'linhas para a planilha com o valor pago');
+  const pg = (t, v) => { const x = pagar(t, v); return `${x.partes}|falta ${x.falta}|troco ${x.troco}`; };
+  ok(pg(20000, [8000, null, null]) === '8000,6000,6000|falta 0|troco 0', 'sem valor divide o que falta: ' + pg(20000, [8000, null, null]));
+  ok(pg(10000, [null, null, null]) === '3334,3333,3333|falta 0|troco 0', 'todos sem valor = partes iguais');
+  ok(pg(10000, [3000, 3000]) === '3000,3000|falta 4000|troco 0', 'falta pagar');
+  ok(pg(10000, [6000, 6000]) === '6000,6000|falta 0|troco 2000', 'troco');
+  ok(pg(10000, [12000, null]) === '12000,0|falta 0|troco 2000', 'pagou a mais: o sem valor fica com zero');
   ok(dataBR('2026-10-21') === '21/10/2026', 'data no formato dd/mm/aaaa');
   ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000])
-     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Parte (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
+     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
   ok(JSON.stringify(resumoPagamentos([], [])) === JSON.stringify([['PIX', 0], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 0]]), 'totais zerados mostram as quatro formas');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
