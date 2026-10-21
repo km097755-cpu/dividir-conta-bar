@@ -7,30 +7,31 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
 /* Layout: uma coluna de "comanda" (entradas) e um painel de resultado ao lado no desktop; empilha no celular. */
+/* Paleta vermelho café: quadros em vermelho café, fundo café, botões caramelo */
 :root {
-  --bg: #eef1ec;        /* verde-garrafa bem claro */
-  --surface: #ffffff;
-  --ink: #18231d;
-  --muted: #56645b;
-  --line: #cfd8d1;
-  --accent: #b86a00;    /* âmbar de chope */
+  --bg: #f5ebe6;        /* creme de café */
+  --surface: #f3ddd5;   /* quadro: vermelho café bem claro */
+  --ink: #2a120e;
+  --muted: #6b3f36;
+  --line: #c98f80;      /* borda vermelho café */
+  --accent: #8e2a1f;    /* vermelho café */
   --accent-ink: #ffffff;
-  --accent-soft: #fbecd3;
-  --ok: #1f7a46;
-  --err: #b3261e;
-  --err-soft: #fde8e6;
+  --accent-soft: #ecc5ba;
+  --ok: #24693a;
+  --err: #a1201a;
+  --err-soft: #fbe2df;
   --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --f-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0f1713; --surface: #18221c; --ink: #e7eee9; --muted: #9db0a3; --line: #2c3a31;
-  --accent: #f2a93b; --accent-ink: #1a1203; --accent-soft: #3a2a10;
-  --ok: #6fd39a; --err: #ff8a80; --err-soft: #3b1714; color-scheme: dark } }
+  --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
+  --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
+  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #0f1713; --surface: #18221c; --ink: #e7eee9; --muted: #9db0a3; --line: #2c3a31;
-  --accent: #f2a93b; --accent-ink: #1a1203; --accent-soft: #3a2a10;
-  --ok: #6fd39a; --err: #ff8a80; --err-soft: #3b1714; color-scheme: dark }
+  --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
+  --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
+  --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark }
 
 * { box-sizing: border-box }
 [hidden] { display: none !important }
