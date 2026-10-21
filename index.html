@@ -1,0 +1,322 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Racha da Comanda</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Calculadora para dividir a conta do bar: comida para todos, bebida só para quem bebeu, taxa de serviço sobre cada parte.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: uma coluna de "comanda" (entradas) e um painel de resultado ao lado no desktop; empilha no celular. */
+:root {
+  --bg: #eef1ec;        /* verde-garrafa bem claro */
+  --surface: #ffffff;
+  --ink: #18231d;
+  --muted: #56645b;
+  --line: #cfd8d1;
+  --accent: #b86a00;    /* âmbar de chope */
+  --accent-ink: #ffffff;
+  --accent-soft: #fbecd3;
+  --ok: #1f7a46;
+  --err: #b3261e;
+  --err-soft: #fde8e6;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1713; --surface: #18221c; --ink: #e7eee9; --muted: #9db0a3; --line: #2c3a31;
+  --accent: #f2a93b; --accent-ink: #1a1203; --accent-soft: #3a2a10;
+  --ok: #6fd39a; --err: #ff8a80; --err-soft: #3b1714; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1713; --surface: #18221c; --ink: #e7eee9; --muted: #9db0a3; --line: #2c3a31;
+  --accent: #f2a93b; --accent-ink: #1a1203; --accent-soft: #3a2a10;
+  --ok: #6fd39a; --err: #ff8a80; --err-soft: #3b1714; color-scheme: dark }
+
+* { box-sizing: border-box }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 1rem; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 24px }
+header h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 60ch }
+.grid { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr) } }
+section { display: grid; gap: 16px; min-width: 0 }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin: 0 }
+.label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
+.field { display: grid; gap: 4px }
+.field label { font-weight: 700 }
+.money { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden }
+.money span { padding: 10px 10px; color: var(--muted); font-family: var(--f-num); border-right: 1px solid var(--line) }
+input[type="text"] { font: inherit; color: var(--ink); background: var(--bg); border: 0; padding: 10px 12px; width: 100%; min-width: 0; font-family: var(--f-num); font-variant-numeric: tabular-nums }
+.plain { border: 1px solid var(--line) !important; border-radius: 8px }
+input:focus-visible, button:focus-visible, .money:focus-within { outline: 3px solid var(--accent); outline-offset: 2px }
+.money input:focus-visible { outline: none }
+[aria-invalid="true"], .money:has([aria-invalid="true"]) { border-color: var(--err) !important }
+.err { color: var(--err); font-size: .9rem; min-height: 0 }
+.hint { color: var(--muted); font-size: .88rem }
+button { font: inherit; cursor: pointer; border-radius: 8px; min-height: 44px }
+.btn { background: var(--accent); color: var(--accent-ink); border: 0; padding: 0 16px; font-weight: 700 }
+.btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); padding: 0 12px }
+.add { display: flex; gap: 8px }
+.add input { flex: 1 }
+ul.people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
+ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px }
+.pname { overflow-wrap: anywhere; font-weight: 700 }
+.drink { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; white-space: nowrap }
+.drink input { width: 20px; height: 20px; accent-color: var(--accent) }
+.empty { color: var(--muted); font-style: italic }
+.result { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px) }
+.total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap }
+.total strong { font-family: var(--f-num); font-size: clamp(1.6rem, 6vw, 2.2rem); font-variant-numeric: tabular-nums }
+.breakdown { display: grid; gap: 4px; font-size: .92rem; color: var(--muted) }
+.breakdown div, .rows li { display: flex; justify-content: space-between; gap: 12px }
+.breakdown span:last-child, .rows .v { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap }
+.rows { list-style: none; margin: 0; padding: 0; display: grid }
+.rows li { padding: 10px 0; border-top: 1px dashed var(--line); align-items: baseline }
+.rows .who { min-width: 0; overflow-wrap: anywhere; flex: 1 }
+.rows li:has(.btn-ghost) { align-items: center; flex-wrap: wrap }
+.rows .tag { display: inline-block; margin-left: 6px; font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); vertical-align: middle }
+.rows .v { font-weight: 700; font-size: 1.05rem }
+.check { font-size: .9rem; color: var(--ok); font-weight: 700 }
+.alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
+#teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+@media (prefers-reduced-motion: no-preference) { button { transition: filter .15s } button:hover { filter: brightness(1.08) } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Racha da Comanda</h1>
+    <p>Comida e taxa de serviço dividem entre todos. Bebida alcoólica divide só entre quem bebeu. A taxa incide sobre a parte de cada um.</p>
+  </header>
+
+  <div class="grid">
+    <section aria-labelledby="h-conta">
+      <h2 id="h-conta">A conta</h2>
+      <form class="panel" id="form-conta" novalidate>
+        <div class="field">
+          <label for="comida">Total da comida</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="comida" inputmode="decimal" autocomplete="off" value="180,00" aria-describedby="comida-err"></div>
+          <div class="err" id="comida-err"></div>
+        </div>
+        <div class="field">
+          <label for="bebida">Total das bebidas alcoólicas</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="bebida" inputmode="decimal" autocomplete="off" value="96,50" aria-describedby="bebida-err"></div>
+          <div class="err" id="bebida-err"></div>
+        </div>
+        <div class="field">
+          <label for="taxa">Taxa de serviço (%)</label>
+          <div class="money"><span aria-hidden="true">%</span><input type="text" id="taxa" inputmode="decimal" autocomplete="off" value="10" aria-describedby="taxa-hint taxa-err"></div>
+          <div class="hint" id="taxa-hint">Padrão de 10%. Use 0 se o bar não cobrou.</div>
+          <div class="err" id="taxa-err"></div>
+        </div>
+        <div class="field">
+          <label for="pix">Chave Pix de quem pagou a conta</label>
+          <input type="text" id="pix" class="plain" autocomplete="off" maxlength="100" aria-describedby="pix-hint">
+          <div class="hint" id="pix-hint">Opcional. CPF, e-mail, telefone ou chave aleatória. Entra na mensagem de cobrança.</div>
+        </div>
+      </form>
+
+      <h2 id="h-pessoas">Quem estava na mesa</h2>
+      <div class="panel">
+        <form class="add" id="form-add" novalidate>
+          <label for="nome" class="sr">Nome da pessoa</label>
+          <input type="text" id="nome" class="plain" placeholder="Nome da pessoa" autocomplete="off" maxlength="40" aria-describedby="nome-err">
+          <button class="btn" type="submit">Adicionar</button>
+        </form>
+        <div class="err" id="nome-err" role="alert"></div>
+        <ul class="people" id="lista" aria-labelledby="h-pessoas"></ul>
+        <p class="hint">Exemplo preenchido. Troque pelos nomes e valores da sua mesa.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-res" class="result">
+      <h2 id="h-res">Quanto cada um paga</h2>
+      <div class="panel" id="resultado" aria-live="polite"></div>
+      <div class="check" id="aviso" role="status" aria-live="polite"></div>
+      <div class="panel" id="teste" hidden></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmt = c => brl.format(c / 100);
+const MAX_CENTS = 100000000; // R$ 1.000.000,00
+const MAX_PESSOAS = 100;
+
+// Aceita "1.234,56", "1234,56", "1234.56", "R$ 10". Devolve centavos inteiros ou null.
+function parseValor(txt) {
+  let s = String(txt).replace(/R\$|\s/g, '');
+  if (s === '') return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); // "1.234" = mil
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  const [i, d = ''] = s.split('.');
+  return Number(i) * 100 + Number((d + '00').slice(0, 2));
+}
+
+// Núcleo: tudo em inteiros. taxaBp = taxa em centésimos de ponto percentual (10% = 1000).
+// Cada parte exata = (comida/n + bebida/k se bebeu) * (1 + taxa). O total arredonda uma vez;
+// os centavos que sobram do arredondamento para baixo vão para as maiores frações (maior resto).
+function dividir(comida, bebida, taxaBp, bebeu) {
+  const n = bebeu.length, k = bebeu.filter(Boolean).length;
+  if (n === 0) throw new Error('Adicione pelo menos uma pessoa.');
+  if (bebida > 0 && k === 0) throw new Error('Há valor de bebida, mas ninguém está marcado como "bebeu".');
+  const kk = Math.max(k, 1), fator = 10000 + taxaBp, den = n * kk * 10000;
+  const num = bebeu.map(b => (comida * kk + (b ? bebida * n : 0)) * fator);
+  const total = Math.floor(((comida + bebida) * fator * 2 + 10000) / 20000); // meio para cima
+  const partes = num.map(x => Math.floor(x / den));
+  let sobra = total - partes.reduce((a, b) => a + b, 0);
+  num.map((x, i) => [x % den, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+     .forEach(([, i]) => { if (sobra > 0) { partes[i]++; sobra--; } });
+  return { partes, total, servico: total - comida - bebida };
+}
+
+// Mensagem de cobrança pronta para colar no WhatsApp. A chave Pix não é guardada em lugar nenhum.
+function mensagemCobranca(nome, centavos, pix) {
+  const chave = String(pix || '').trim();
+  return `Oi, ${nome}! A sua parte da conta do bar ficou em ${fmt(centavos)}.` + (chave ? ` Pix: ${chave}.` : '') + ' Obrigado!';
+}
+
+async function copiarTexto(txt) {
+  try { await navigator.clipboard.writeText(txt); return true; }
+  catch {
+    const ta = Object.assign(document.createElement('textarea'), { value: txt });
+    ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch {}
+    ta.remove(); return ok;
+  }
+}
+
+let avisoTimer;
+function avisar(msg) {
+  const el = $('aviso'); el.textContent = msg;
+  clearTimeout(avisoTimer); avisoTimer = setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+const $ = id => document.getElementById(id);
+let pessoas = [
+  { nome: 'Ana', bebeu: true }, { nome: 'Bruno', bebeu: true },
+  { nome: 'Carla', bebeu: false }, { nome: 'Diego', bebeu: false }
+];
+
+function campo(id, rotulo, max) {
+  const el = $(id), v = parseValor(el.value);
+  let msg = '';
+  if (v === null) msg = el.value.trim() === '' ? `Informe ${rotulo} (use 0 se não houver).` : `Valor inválido. Use números com até 2 casas, ex.: 123,45.`;
+  else if (v > max) msg = `Valor alto demais. O limite é ${id === 'taxa' ? '100%' : fmt(max)}.`;
+  el.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  $(id + '-err').textContent = msg;
+  return msg ? null : v;
+}
+
+function renderLista() {
+  const ul = $('lista');
+  ul.replaceChildren();
+  if (!pessoas.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Ninguém na mesa ainda. Adicione um nome acima.'; ul.append(li); }
+  pessoas.forEach((p, i) => {
+    const li = document.createElement('li');
+    const nome = document.createElement('span'); nome.className = 'pname'; nome.textContent = p.nome;
+    const lab = document.createElement('label'); lab.className = 'drink';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'bebeu-' + i; cb.checked = p.bebeu;
+    cb.addEventListener('change', () => { p.bebeu = cb.checked; calcular(); });
+    lab.append(cb, document.createTextNode(' bebeu'));
+    const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn-ghost'; rm.textContent = 'Remover';
+    rm.setAttribute('aria-label', 'Remover ' + p.nome);
+    rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('nome').focus(); });
+    li.append(nome, lab, rm); ul.append(li);
+  });
+}
+
+function calcular() {
+  const out = $('resultado');
+  const comida = campo('comida', 'o total da comida', MAX_CENTS);
+  const bebida = campo('bebida', 'o total das bebidas', MAX_CENTS);
+  const taxa = campo('taxa', 'a taxa de serviço', 10000); // em "centavos de %": 100% = 10000
+  if (comida === null || bebida === null || taxa === null) { out.innerHTML = '<div class="alert">Corrija os campos marcados para ver a divisão.</div>'; return; }
+  let r;
+  try { r = dividir(comida, bebida, taxa, pessoas.map(p => p.bebeu)); }
+  catch (e) { out.replaceChildren(Object.assign(document.createElement('div'), { className: 'alert', textContent: e.message })); return; }
+  const soma = r.partes.reduce((a, b) => a + b, 0);
+  out.innerHTML = `
+    <div class="total"><span class="label">Total da conta</span><strong>${fmt(r.total)}</strong></div>
+    <div class="breakdown">
+      <div><span>Comida</span><span>${fmt(comida)}</span></div>
+      <div><span>Bebidas alcoólicas</span><span>${fmt(bebida)}</span></div>
+      <div><span>Serviço (${(taxa / 100).toLocaleString('pt-BR')}%)</span><span>${fmt(r.servico)}</span></div>
+    </div>
+    <ul class="rows"></ul>
+    <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>`;
+  const ul = out.querySelector('.rows');
+  pessoas.forEach((p, i) => {
+    const li = document.createElement('li');
+    const who = document.createElement('span'); who.className = 'who'; who.textContent = p.nome;
+    if (p.bebeu) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'bebeu' }));
+    const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
+    cp.setAttribute('aria-label', 'Copiar cobrança de ' + p.nome);
+    cp.addEventListener('click', async () => {
+      const ok = await copiarTexto(mensagemCobranca(p.nome, r.partes[i], $('pix').value));
+      avisar(ok ? 'Cobrança copiada' : 'Não foi possível copiar. Tente de novo.');
+    });
+    li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
+    ul.append(li);
+  });
+}
+
+$('form-conta').addEventListener('input', calcular);
+$('form-conta').addEventListener('submit', e => e.preventDefault());
+$('form-add').addEventListener('submit', e => {
+  e.preventDefault();
+  const el = $('nome'), nome = el.value.trim().replace(/\s+/g, ' ');
+  let msg = '';
+  if (!nome) msg = 'Digite um nome para adicionar.';
+  else if (pessoas.some(p => p.nome.toLowerCase() === nome.toLowerCase())) msg = `"${nome}" já está na mesa. Use outro nome, ex.: ${nome} 2.`;
+  else if (pessoas.length >= MAX_PESSOAS) msg = `O limite é de ${MAX_PESSOAS} pessoas.`;
+  $('nome-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  if (msg) return;
+  pessoas.push({ nome, bebeu: false }); el.value = ''; renderLista(); calcular(); el.focus();
+});
+
+renderLista(); calcular();
+
+// Autoteste: abra a página com ?teste na URL.
+if (/[?&]teste\b/.test(location.search)) {
+  const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
+  const soma = a => a.reduce((x, y) => x + y, 0);
+  let r = dividir(10000, 0, 1000, [false, false, false]);
+  ok(r.total === 11000 && soma(r.partes) === 11000, 'R$100 + 10% entre 3 soma R$110,00');
+  ok(JSON.stringify(r.partes) === '[3667,3667,3666]', 'sobra de centavos vai para os primeiros: ' + r.partes);
+  r = dividir(18000, 9650, 1000, [true, true, false, false]);
+  ok(soma(r.partes) === r.total && r.total === 30415, 'exemplo da página confere: ' + r.total);
+  ok(r.partes[0] - r.partes[2] === 5308 || r.partes[0] - r.partes[2] === 5307, 'quem bebeu paga a bebida + 10%');
+  r = dividir(0, 5000, 0, [true, false]);
+  ok(r.partes[0] === 5000 && r.partes[1] === 0, 'bebida só para quem bebeu, sem taxa');
+  r = dividir(1, 0, 0, [false, false, false]);
+  ok(JSON.stringify(r.partes) === '[1,0,0]', '1 centavo não se multiplica nem some');
+  for (let t = 0; t < 300; t++) {
+    const n = 1 + (t % 9), bb = Array.from({ length: n }, (_, i) => (i * 7 + t) % 3 === 0);
+    const c = (t * 7919) % 500000, d = bb.some(Boolean) ? (t * 104729) % 300000 : 0, tx = (t * 37) % 2001;
+    const x = dividir(c, d, tx, bb);
+    if (soma(x.partes) !== x.total || x.partes.some(v => v < 0)) { ok(false, `aleatório ${t}`); break; }
+    if (t === 299) ok(true, '300 casos variados: soma sempre igual ao total');
+  }
+  let erro = ''; try { dividir(100, 100, 1000, [false]); } catch (e) { erro = e.message; }
+  ok(erro.includes('ninguém'), 'bebida sem ninguém que bebeu gera erro');
+  ok(parseValor('1.234,56') === 123456 && parseValor('1234.5') === 123450 && parseValor('1.234') === 123400, 'lê formatos pt-BR');
+  ok(parseValor('-5') === null && parseValor('abc') === null && parseValor('1,234') === null, 'rejeita entradas inválidas');
+  const real = fmt(123456); // "R$ 1.234,56" com espaço não separável do Intl
+  ok(/^R\$\s1\.234,56$/.test(real)
+     && mensagemCobranca('Ana', 123456, '  ana@ex.com ') === `Oi, Ana! A sua parte da conta do bar ficou em ${real}. Pix: ana@ex.com. Obrigado!`
+     && mensagemCobranca('Bruno', 10258, '   ') === `Oi, Bruno! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, em reais');
+  const falhas = log.filter(l => l.startsWith('FALHA')).length;
+  const el = $('teste'); el.hidden = false;
+  el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
+  console[falhas ? 'error' : 'log'](el.textContent);
+}
+</script>
