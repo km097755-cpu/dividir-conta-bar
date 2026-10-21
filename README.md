@@ -1,6 +1,6 @@
-# Dividir a conta do bar
+# Bookafé (Comanda)
 
-Calculadora que divide a conta do bar em partes iguais, sem perder centavos e sem taxa de serviço. A lista começa vazia: toque em Adicionar para abrir uma linha para cada pessoa que pagar (o nome é opcional e pode ser escrito depois, tanto em "Quem pagou" quanto em "Quanto cada um paga") e escolha a forma de pagamento (PIX, débito, crédito ou dinheiro). Embaixo de "Quanto cada um paga" fica o total em PIX, débito, crédito e dinheiro, e o total geral. Tem campo para a chave Pix de quem pagou e botão que copia a mensagem de cobrança de cada pessoa. Autoteste: abra com `?teste` no fim do endereço.
+Calculadora de comanda do Bookafé: tem campo de data e divide a conta em partes iguais, sem perder centavos e sem taxa de serviço. A lista começa vazia: toque em Adicionar para abrir uma linha para cada pessoa que pagar (o nome é opcional e pode ser escrito depois, tanto em "Quem pagou" quanto em "Quanto cada um paga") e escolha a forma de pagamento (PIX, débito, crédito ou dinheiro). Embaixo de "Quanto cada um paga" fica o total em PIX, débito, crédito e dinheiro, e o total geral. Tem campo para a chave Pix de quem pagou e botão que copia a mensagem de cobrança de cada pessoa. O botão "Copiar para a planilha" copia uma linha por pessoa (data, comanda, total, pessoa, forma) para colar numa planilha diária do Excel. Autoteste: abra com `?teste` no fim do endereço.
 
 Página única (HTML, CSS e JavaScript no mesmo arquivo). Não precisa instalar nada: baixe o `index.html` e abra com duplo clique no navegador.
 
