@@ -83,6 +83,11 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
 .rows .tag { display: inline-block; white-space: nowrap; margin-left: 6px; font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); vertical-align: middle }
 .rows .v { font-weight: 700; font-size: 1.05rem }
 .check { font-size: .9rem; color: var(--ok); font-weight: 700 }
+.totais { gap: 0 }
+.totais div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--line) }
+.totais div:first-child { border-top: 0 }
+.totais span:last-child { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap }
+.totais .geral { border-top: 2px solid var(--line); font-weight: 700; font-size: 1.1rem }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
@@ -115,7 +120,7 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
       <div class="panel">
         <form class="add" id="form-add" novalidate>
           <label for="nome" class="sr">Nome da pessoa</label>
-          <input type="text" id="nome" class="plain" placeholder="Nome da pessoa" autocomplete="off" maxlength="40" aria-describedby="nome-err">
+          <input type="text" id="nome" class="plain" placeholder="Nome (opcional)" autocomplete="off" maxlength="40" aria-describedby="nome-err">
           <label for="nova-pag" class="sr">Forma de pagamento</label>
           <select id="nova-pag" class="pag"></select>
           <button class="btn" type="submit">Adicionar</button>
@@ -123,6 +128,9 @@ ul.people li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; g
         <div class="err" id="nome-err" role="alert"></div>
         <ul class="people" id="lista" aria-labelledby="h-pessoas"></ul>
       </div>
+
+      <h2 id="h-totais">Total por forma de pagamento</h2>
+      <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
     </section>
 
     <section aria-labelledby="h-res" class="result">
@@ -160,9 +168,9 @@ function dividir(total, n) {
 
 // Formas de pagamento; '' = não informado
 const PAGAMENTOS = { pix: 'PIX', debito: 'Débito', credito: 'Crédito', dinheiro: 'Dinheiro' };
-// Soma das partes por forma de pagamento, na ordem de PAGAMENTOS, só as que aparecem
+// Soma das partes por forma de pagamento: as quatro formas sempre, "Não informado" só se houver
 function resumoPagamentos(formas, partes) {
-  const soma = {};
+  const soma = Object.fromEntries(Object.keys(PAGAMENTOS).map(k => [k, 0]));
   formas.forEach((f, i) => { const k = f in PAGAMENTOS ? f : ''; soma[k] = (soma[k] || 0) + partes[i]; });
   return [...Object.keys(PAGAMENTOS), ''].filter(k => k in soma).map(k => [k ? PAGAMENTOS[k] : 'Não informado', soma[k]]);
 }
@@ -170,7 +178,7 @@ function resumoPagamentos(formas, partes) {
 // Mensagem de cobrança pronta para colar no WhatsApp. A chave Pix não é guardada em lugar nenhum.
 function mensagemCobranca(nome, centavos, pix) {
   const chave = String(pix || '').trim();
-  return `Oi, ${nome}! A sua parte da conta do bar ficou em ${fmt(centavos)}.` + (chave ? ` Pix: ${chave}.` : '') + ' Obrigado!';
+  return (nome ? `Oi, ${nome}!` : 'Oi!') + ` A sua parte da conta do bar ficou em ${fmt(centavos)}.` + (chave ? ` Pix: ${chave}.` : '') + ' Obrigado!';
 }
 
 async function copiarTexto(txt) {
@@ -205,26 +213,44 @@ function campo(id, rotulo, max) {
   return msg ? null : v;
 }
 
+// Nome é opcional: sem nome, a pessoa aparece como "Pessoa N"
+const rotulo = (p, i) => p.nome.trim() || `Pessoa ${i + 1}`;
+
 function renderLista() {
   const ul = $('lista');
   ul.replaceChildren();
-  if (!pessoas.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Ninguém ainda. Digite o nome de quem pagou, escolha a forma e toque em Adicionar.'; ul.append(li); }
+  if (!pessoas.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'Ninguém ainda. Toque em Adicionar para abrir uma linha para cada pessoa que pagar; o nome pode ficar em branco.'; ul.append(li); }
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
-    const nome = document.createElement('span'); nome.className = 'pname'; nome.textContent = p.nome;
+    const nome = Object.assign(document.createElement('input'), { type: 'text', className: 'plain pname', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
+    nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
+    nome.addEventListener('input', () => { p.nome = nome.value; calcular(); });
     const pag = document.createElement('select'); pag.className = 'pag'; pag.id = 'pag-' + i;
-    pag.setAttribute('aria-label', 'Forma de pagamento de ' + p.nome);
+    pag.setAttribute('aria-label', `Forma de pagamento da pessoa ${i + 1}`);
     pag.append(...opcoesPagamento());
     pag.value = p.pag || '';
     pag.addEventListener('change', () => { p.pag = pag.value; calcular(); });
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn-ghost'; rm.textContent = 'Remover';
-    rm.setAttribute('aria-label', 'Remover ' + p.nome);
+    rm.setAttribute('aria-label', `Remover a pessoa ${i + 1}`);
     rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('nome').focus(); });
     li.append(nome, pag, rm); ul.append(li);
   });
 }
 
-function calcular() {
+// Quadro de totais embaixo de "Quem pagou": PIX, Débito, Crédito, Dinheiro e Total geral
+function renderTotais(partes) {
+  const box = $('totais'), linha = (a, b, cls) => {
+    const d = document.createElement('div'); if (cls) d.className = cls;
+    d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: fmt(b) }));
+    return d;
+  };
+  const itens = resumoPagamentos(pessoas.map(p => p.pag).slice(0, partes.length), partes);
+  box.replaceChildren(...itens.map(([forma, v]) => linha(forma === 'Não informado' ? 'Sem forma de pagamento' : 'Total em ' + forma, v)), linha('Total geral', partes.reduce((a, b) => a + b, 0), 'geral'));
+}
+
+function calcular() { renderTotais(calcularResultado() || []); }
+
+function calcularResultado() {
   const out = $('resultado');
   const dica = txt => out.replaceChildren(Object.assign(document.createElement('p'), { className: 'hint', textContent: txt }));
   // Campo ainda vazio não é erro: só pede o total
@@ -238,29 +264,22 @@ function calcular() {
     <div class="total"><span class="label">Total da conta</span><strong>${fmt(r.total)}</strong></div>
     <div class="breakdown"><div><span>Dividido entre ${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'}</span><span></span></div></div>
     <ul class="rows"></ul>
-    <div class="breakdown" id="por-pagamento"></div>
     <div class="check">Soma das partes: ${fmt(soma)} ${soma === r.total ? 'confere com a conta.' : 'NÃO confere.'}</div>`;
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
-    const who = document.createElement('span'); who.className = 'who'; who.textContent = p.nome;
+    const who = document.createElement('span'); who.className = 'who'; who.textContent = rotulo(p, i);
     if (PAGAMENTOS[p.pag]) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: PAGAMENTOS[p.pag] }));
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
-    cp.setAttribute('aria-label', 'Copiar cobrança de ' + p.nome);
+    cp.setAttribute('aria-label', 'Copiar cobrança de ' + rotulo(p, i));
     cp.addEventListener('click', async () => {
-      const ok = await copiarTexto(mensagemCobranca(p.nome, r.partes[i], $('pix').value));
+      const ok = await copiarTexto(mensagemCobranca(p.nome.trim(), r.partes[i], $('pix').value));
       avisar(ok ? 'Cobrança copiada' : 'Não foi possível copiar. Tente de novo.');
     });
     li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
     ul.append(li);
   });
-  const resumo = $('por-pagamento');
-  resumo.append(Object.assign(document.createElement('span'), { className: 'label', textContent: 'Por forma de pagamento' }));
-  resumoPagamentos(pessoas.map(p => p.pag), r.partes).forEach(([forma, v]) => {
-    const d = document.createElement('div');
-    d.append(Object.assign(document.createElement('span'), { textContent: forma }), Object.assign(document.createElement('span'), { textContent: fmt(v) }));
-    resumo.append(d);
-  });
+  return r.partes;
 }
 
 $('form-conta').addEventListener('input', calcular);
@@ -268,10 +287,7 @@ $('form-conta').addEventListener('submit', e => e.preventDefault());
 $('form-add').addEventListener('submit', e => {
   e.preventDefault();
   const el = $('nome'), nome = el.value.trim().replace(/\s+/g, ' ');
-  let msg = '';
-  if (!nome) msg = 'Digite um nome para adicionar.';
-  else if (pessoas.some(p => p.nome.toLowerCase() === nome.toLowerCase())) msg = `"${nome}" já está na mesa. Use outro nome, ex.: ${nome} 2.`;
-  else if (pessoas.length >= MAX_PESSOAS) msg = `O limite é de ${MAX_PESSOAS} pessoas.`;
+  const msg = pessoas.length >= MAX_PESSOAS ? `O limite é de ${MAX_PESSOAS} pessoas.` : '';
   $('nome-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
   if (msg) return;
   pessoas.push({ nome, pag: $('nova-pag').value }); el.value = ''; $('nova-pag').value = ''; renderLista(); calcular(); el.focus();
@@ -302,9 +318,11 @@ if (/[?&]teste\b/.test(location.search)) {
   const real = fmt(123456); // "R$ 1.234,56" com espaço não separável do Intl
   ok(/^R\$\s1\.234,56$/.test(real)
      && mensagemCobranca('Ana', 123456, '  ana@ex.com ') === `Oi, Ana! A sua parte da conta do bar ficou em ${real}. Pix: ana@ex.com. Obrigado!`
-     && mensagemCobranca('Bruno', 10258, '   ') === `Oi, Bruno! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, em reais');
+     && mensagemCobranca('Bruno', 10258, '   ') === `Oi, Bruno! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`
+     && mensagemCobranca('', 10258, '') === `Oi! A sua parte da conta do bar ficou em ${fmt(10258)}. Obrigado!`, 'mensagem de cobrança com e sem Pix, com e sem nome, em reais');
   ok(JSON.stringify(resumoPagamentos(['dinheiro', 'pix', '', 'pix', 'xyz'], [100, 200, 300, 400, 500]))
-     === JSON.stringify([['PIX', 600], ['Dinheiro', 100], ['Não informado', 800]]), 'resumo por forma de pagamento');
+     === JSON.stringify([['PIX', 600], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 100], ['Não informado', 800]]), 'resumo por forma de pagamento');
+  ok(JSON.stringify(resumoPagamentos([], [])) === JSON.stringify([['PIX', 0], ['Débito', 0], ['Crédito', 0], ['Dinheiro', 0]]), 'totais zerados mostram as quatro formas');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
