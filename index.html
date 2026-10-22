@@ -235,9 +235,8 @@ ul.barras li.empty { display: block }
           <label for="coleta">Coleta/Cofre</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="coleta" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="coleta-err coleta-hint"></div>
           <div class="err" id="coleta-err"></div>
-          <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. Fica guardado para a data escolhida e não mexe nas comandas.</div>
+          <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. É descontado do fechamento do caixa, fica guardado para a data escolhida e não mexe nas comandas.</div>
         </div>
-        <div class="totais" id="pos-coleta" aria-live="polite"></div>
       </div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
@@ -484,13 +483,12 @@ function renderTotais() {
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linha('Total do dia em ' + nome, f[k] || 0)),
     ...(f[''] ? [linha('Total do dia sem forma de pagamento', f[''])] : []),
     linha('Total do dia', dia.centavos, 'geral dia'));
-  // Fechamento do dia: só aqui as saídas/compras são descontadas
-  const co = lerValor('coleta', iso), caixa = ab + (f.dinheiro || 0) - sa;
+  // Fechamento do dia: só aqui as saídas/compras e a coleta são descontadas
+  const co = lerValor('coleta', iso), caixa = ab + dia.centavos;
   $('fechamento').replaceChildren(
-    linha('Resultado do dia (total do dia − saídas)', dia.centavos - sa, 'geral'),
-    linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', caixa),
-    linha('Fechamento do caixa (abertura + total do dia − saídas)', ab + dia.centavos - sa, 'geral dia'));
-  $('pos-coleta').replaceChildren(...(co ? [linha('Fica no caixa em dinheiro (dinheiro no caixa − coleta)', caixa - co)] : []));
+    linha('Resultado do dia (só as vendas)', dia.centavos, 'geral'),
+    linha('Dinheiro no caixa (abertura + vendas)', caixa),
+    linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia'));
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
