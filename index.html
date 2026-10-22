@@ -105,6 +105,7 @@ ul.people .pvalor { font-family: var(--f-num) }
 /* Valores principais (Total do dia, Fechamento do caixa, Sobra para a abertura, Total do mês): maiores e em selo */
 .totais .destaque { align-items: center }
 .totais .destaque > span:last-child { font-size: 1.15rem; font-weight: 800; color: var(--accent); background: var(--accent-soft); padding: 1px 8px; border-radius: 7px }
+.totais p.realce { color: var(--accent); font-size: .88rem; font-weight: 800 } /* rótulo "Dia … · N comandas" e "N dias · N comandas" */
 .totais .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
@@ -526,9 +527,9 @@ function renderTotais() {
   const linhaForma = (k, nome, v = f[k] || 0) => linhaFormaPct(k, nome, v, dia.centavos,
     `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + escalaCrescimento(cmds, k, v));
   box.replaceChildren(
-    Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
-    linha('Abertura de caixa', ab),
-    linha('Abastecimento de caixa', abs),
+    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
+    linha('Abertura de caixa', ab, 'destaque'),
+    linha('Abastecimento de caixa', abs, 'destaque'),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
     Object.assign(linha('Total do dia', dia.centavos, 'geral dia destaque'), { tabIndex: 0 }));
@@ -538,7 +539,7 @@ function renderTotais() {
   const co = lerValor('coleta', iso), caixa = ab + abs + dia.centavos;
   $('fechamento').replaceChildren(
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
-    linha('Dinheiro no caixa (total do caixa + vendas)', caixa),
+    linha('Dinheiro no caixa (total do caixa + vendas)', caixa, 'destaque'),
     linha('Fechamento do caixa', caixa - sa - co, 'geral dia destaque'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
@@ -547,7 +548,7 @@ function renderTotais() {
   const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escalaCrescimento(etM, k, v));
   $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
   $('mes-pct').replaceChildren(
-    Object.assign(document.createElement('p'), { className: 'label', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
+    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
     ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
     Object.assign(linha('Total do mês', rM.centavos, 'geral dia destaque'), { tabIndex: 0 }));
