@@ -216,7 +216,7 @@ ul.barras li.empty { display: block }
         <div class="field">
           <label for="senha">Senha (número)</label>
           <input type="text" id="senha" class="plain" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="Ex.: 23" aria-describedby="senha-hint">
-          <div class="hint" id="senha-hint">Opcional. Identifica a comanda pelo número, sozinho ("Senha 23") ou junto com o nome ("Carlos (senha 23)").</div>
+          <div class="hint" id="senha-hint">Cada comanda recebe sozinha o próximo número do dia (1, 2, 3…); dá para trocar ou apagar. Aparece como "Senha 23" ou junto com o nome ("Carlos (senha 23)").</div>
         </div>
         <div class="field">
           <label for="total">Total da conta</label>
@@ -542,7 +542,11 @@ function mostraValoresDia() {
     const c = lerValor(tipo, $('data').value || hojeISO());
     $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
   }
+  $('senha').value = proximaSenha($('data').value || hojeISO());
 }
+// Senha: cada comanda do dia recebe sozinha o próximo número (1, 2, 3…), guardado por data; dá para trocar à mão (só números)
+const proximaSenha = iso => String(lerValor('senha', iso) + 1);
+$('senha').addEventListener('input', () => { $('senha').value = $('senha').value.replace(/\D/g, ''); });
 // Só atualiza os quadros Total e Fechamento do dia; a comanda aberta não muda
 for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
@@ -558,7 +562,7 @@ $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
 // Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas e pasta
 function novaComanda() {
-  pessoas = []; $('cliente').value = ''; $('senha').value = ''; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
+  pessoas = []; $('cliente').value = ''; $('senha').value = proximaSenha($('data').value || hojeISO()); $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
@@ -682,13 +686,14 @@ function calcularResultado() {
     ${situacao}
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
-    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso), cli = clienteTxt();
+    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso), cli = clienteTxt(), sen = $('senha').value.trim();
     const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes), iso);
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
     somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
+    if (/^\d+$/.test(sen)) gravarValor('senha', iso, Math.max(lerValor('senha', iso), +sen)); // a próxima comanda pega o número seguinte
     novaComanda();
     avisar(`Comanda das ${hora}${cli ? ` (${cli})` : ''} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
@@ -945,6 +950,7 @@ $('res-copias').addEventListener('click', async () => {
 // Autoteste: abra a página com ?teste na URL.
 if (/[?&]teste\b/.test(location.search)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
+  const senhaDaTela = $('senha').value; $('senha').value = ''; // os testes de nome contam com a senha vazia; volta no fim
   const soma = a => a.reduce((x, y) => x + y, 0);
   let r = dividir(10000, 3);
   ok(r.total === 10000 && soma(r.partes) === 10000, 'R$100 entre 3 soma R$100,00');
@@ -1024,6 +1030,8 @@ if (/[?&]teste\b/.test(location.search)) {
      === '22/10/2026\t10:00\t50,00\tJoão\tPIX\t25,00\n22/10/2026\t10:00\t50,00\tBia\tSem forma\t25,00', 'nome do cliente entra nos pagamentos sem nome');
   $('senha').value = '23'; const comSenha = clienteTxt(); $('cliente').value = ''; const soSenha = clienteTxt(); $('senha').value = '';
   ok(comSenha === 'João (senha 23)' && soSenha === 'Senha 23' && clienteTxt() === '', 'cliente identificado por nome e/ou senha');
+  const s0 = proximaSenha('1999-04-04'); gravarValor('senha', '1999-04-04', 7); const s7 = proximaSenha('1999-04-04'); gravarValor('senha', '1999-04-04', 0);
+  ok(s0 === '1' && s7 === '8' && proximaSenha('1999-04-05') === '1', 'senha numerada por dia: começa em 1 e segue o último número usado');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
@@ -1052,7 +1060,7 @@ if (/[?&]teste\b/.test(location.search)) {
       const nomes2 = []; for await (const [n] of arquivosComanda(raiz)) nomes2.push(n);
       ok(nomes.length === 2 && nomes2.length === 2, 'Resultados lê a raiz e Comandas\\(mês) sem repetir');
     } catch (e) { ok(false, 'pastas e cópias: ' + e.message); }
-    finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); }
+    finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); $('senha').value = senhaDaTela; }
     const falhas = log.filter(l => l.startsWith('FALHA')).length;
     const el = $('teste'); el.hidden = false;
     el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
