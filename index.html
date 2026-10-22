@@ -243,6 +243,8 @@ ul.barras li.empty { display: block }
         </div>
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
       </div>
+      <h2 id="h-mes-pct">Porcentagem do mês</h2>
+      <div class="panel totais" id="mes-pct" aria-labelledby="h-mes-pct" aria-live="polite"></div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
     </section>
@@ -345,6 +347,15 @@ function escalaCrescimento(etapas, k) {
   if (!l.length) return '';
   const antes = l.length - 12;
   return '\nEscala de crescimento:\n' + (antes > 0 ? `… ${antes} etapa${antes === 1 ? '' : 's'} antes\n` : '') + l.slice(-12).join('\n');
+}
+// Linha de uma forma de pagamento: nome, barra na cor da forma, % e valor; a dica abre ao passar o mouse em qualquer parte
+function linhaFormaPct(k, nome, v, total, dica) {
+  const span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
+  const d = Object.assign(document.createElement('div'), { className: 'forma', tabIndex: 0 }), trilho = span('', 'trilho'), barra = Object.assign(document.createElement('i'), { className: CLASSE_FORMA[k] });
+  barra.style.width = (total ? v / total * 100 : 0) + '%'; trilho.setAttribute('aria-hidden', 'true'); trilho.append(barra);
+  d.append(span(nome), trilho, span(pct(v, total), 'pc'), span(fmt(v)));
+  d.dataset.dica = dica;
+  return d;
 }
 // Quanto ficou em cada forma numa comanda ('' = sem forma). O troco sai do dinheiro primeiro (volta em espécie),
 // depois das outras formas, para o total nunca contar o que foi devolvido.
@@ -498,15 +509,8 @@ function renderTotais() {
   // Linha de cada forma: barra na cor da forma + % do total do dia; a dica mostra a escala de crescimento comanda a comanda
   const cmds = [...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1).map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas }));
   const semEscala = dia.comandas && !cmds.length ? '\n(As comandas deste dia foram finalizadas antes da escala de crescimento.)' : '';
-  const linhaForma = (k, nome) => {
-    const v = f[k] || 0, d = Object.assign(document.createElement('div'), { className: 'forma', tabIndex: 0 });
-    const trilho = Object.assign(document.createElement('span'), { className: 'trilho' }), barra = Object.assign(document.createElement('i'), { className: CLASSE_FORMA[k] });
-    barra.style.width = (dia.centavos ? v / dia.centavos * 100 : 0) + '%'; trilho.setAttribute('aria-hidden', 'true'); trilho.append(barra);
-    d.append(Object.assign(document.createElement('span'), { textContent: nome }), trilho,
-      Object.assign(document.createElement('span'), { className: 'pc', textContent: pct(v, dia.centavos) }), Object.assign(document.createElement('span'), { textContent: fmt(v) }));
-    d.dataset.dica = `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + (escalaCrescimento(cmds, k) || semEscala);
-    return d;
-  };
+  const linhaForma = (k, nome, v = f[k] || 0) => linhaFormaPct(k, nome, v, dia.centavos,
+    `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + (escalaCrescimento(cmds, k) || semEscala));
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab),
@@ -518,10 +522,21 @@ function renderTotais() {
   // Fechamento do dia: só aqui as saídas/compras e a coleta são descontadas
   const co = lerValor('coleta', iso), caixa = ab + dia.centavos;
   $('fechamento').replaceChildren(
-    linha('Resultado do dia (só as vendas)', dia.centavos, 'geral'),
+    linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (abertura + vendas)', caixa),
     linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral'));
+  // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
+  const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
+  const rM = somaDias(diasM.map(([, d]) => d)), etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
+  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escalaCrescimento(etM, k));
+  $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
+  $('mes-pct').replaceChildren(
+    Object.assign(document.createElement('p'), { className: 'label', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
+    ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
+    ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
+    Object.assign(linha('Total do mês', rM.centavos, 'geral dia'), { tabIndex: 0 }));
+  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escalaCrescimento(etM, null);
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
@@ -895,6 +910,8 @@ if (/[?&]teste\b/.test(location.search)) {
   const muitas = escalaCrescimento(Array.from({ length: 15 }, (_, i) => ({ rotulo: 'e' + i, formas: { pix: 100 } })), 'pix');
   ok(muitas.includes('… 3 etapas antes') && muitas.endsWith(`→ ${fmt(1500)}`), 'escala longa mostra as 12 últimas com o acumulado certo');
   ok(diaSeguinte('2026-10-31') === '2026-11-01' && diaSeguinte('2026-12-31') === '2027-01-01', 'dia seguinte vira o mês e o ano');
+  const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
+  ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
