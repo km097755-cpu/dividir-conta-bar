@@ -318,7 +318,7 @@ const nomeSeguro = (p, i) => limpaNome(p.nome) || `Pessoa ${i + 1}`;
 // Isso evita fechar por engano; não é segurança forte (a página é aberta e 4 dígitos se descobrem testando).
 // Pessoa nova: gere o hash com hashSenha('NNNN') no console do navegador e acrescente aqui.
 const hashSenha = pin => { let h = 0x811c9dc5; for (const c of 'bookafe:' + pin) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); };
-const OPERADORES = { '885345d8': 'Pilar', 'f68d66b0': 'Kelly', 'c1ec2f0': 'Kleber' };
+const OPERADORES = { '885345d8': 'Pilar', 'f68d66b0': 'Kelly', 'c1ec2f0': 'Kleber', '3bbd3bac': 'Andrea' };
 const operadorDa = pin => /^\d{4}$/.test(pin) ? OPERADORES[hashSenha(pin)] || null : null;
 function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
   return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
@@ -1032,9 +1032,9 @@ if (/[?&]teste\b/.test(location.search)) {
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
   // Senhas: o teste não guarda nenhuma senha de verdade, só confere as regras
-  ok(Object.values(OPERADORES).join() === 'Pilar,Kelly,Kleber' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'três pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
+  ok(Object.values(OPERADORES).join() === 'Pilar,Kelly,Kleber,Andrea' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'quatro pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
   ok(operadorDa('') === null && operadorDa('123') === null && operadorDa('12345') === null && operadorDa('abcd') === null
-     && Array.from({ length: 10000 }, (_, n) => String(n).padStart(4, '0')).filter(operadorDa).length === 3, 'só 3 senhas de 4 dígitos abrem; o resto é recusado');
+     && Array.from({ length: 10000 }, (_, n) => String(n).padStart(4, '0')).filter(operadorDa).length === 4, 'só as 4 senhas cadastradas abrem; o resto é recusado');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
