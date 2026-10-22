@@ -133,6 +133,16 @@ ul.barras li.empty { display: block }
 .f-pix { background: var(--c-pix) } .f-debito { background: var(--c-debito) } .f-credito { background: var(--c-credito) }
 .f-dinheiro { background: var(--c-dinheiro) } .f-sem { background: var(--c-sem) }
 .bolinha { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle }
+/* Gráfico de crescimento */
+.cresc { width: 100%; height: auto; display: block }
+.cresc .linha { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; pointer-events: none }
+.cresc .eixo { stroke: var(--line) } .cresc .grade { stroke: var(--line); stroke-dasharray: 4 4 }
+.cresc text { font-family: var(--f-num); font-size: 16px; fill: var(--muted) }
+.cresc .faixa { fill: transparent }
+.cresc .ponto { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5 }
+.cresc .etapa { cursor: default; outline: none }
+.cresc .etapa:hover .faixa, .cresc .etapa.ativa .faixa, .cresc .etapa:focus-visible .faixa { fill: var(--accent-soft); opacity: .45 }
+.cresc .etapa:hover .ponto, .cresc .etapa.ativa .ponto, .cresc .etapa:focus-visible .ponto { fill: var(--accent) }
 .dica { position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 32px)); background: var(--ink); color: var(--bg); padding: 8px 10px; border-radius: 8px; font-size: .9rem; line-height: 1.35; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); white-space: pre-line }
 </style>
 
@@ -158,8 +168,12 @@ ul.barras li.empty { display: block }
       <section class="panel" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
       <section class="panel" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
     </div>
+    <div class="res-grid" style="margin-top:24px">
+      <section class="panel" aria-labelledby="h-cresc-dia"><h2 id="h-cresc-dia">Crescimento do dia</h2><div id="cresc-dia"></div></section>
+      <section class="panel" aria-labelledby="h-cresc-mes"><h2 id="h-cresc-mes">Crescimento do mês</h2><div id="cresc-mes"></div></section>
+    </div>
     <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Dias do mês</h2><ul class="barras" id="dias-mes"></ul></section>
-    <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem.</p>
+    <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem, e em cada ponto do gráfico para ver as etapas do crescimento.</p>
   </section>
   <div class="dica" id="dica" role="tooltip" hidden></div>
 
@@ -217,6 +231,13 @@ ul.barras li.empty { display: block }
           <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Não mexe nas comandas: só entra no fechamento do dia da data escolhida.</div>
         </div>
         <div class="totais" id="fechamento" aria-live="polite"></div>
+        <div class="field">
+          <label for="coleta">Coleta/Cofre</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="coleta" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="coleta-err coleta-hint"></div>
+          <div class="err" id="coleta-err"></div>
+          <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. Fica guardado para a data escolhida e não mexe nas comandas.</div>
+        </div>
+        <div class="totais" id="pos-coleta" aria-live="polite"></div>
       </div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
@@ -369,9 +390,20 @@ function somarDia(iso, porForma) {
   for (const [k, v] of Object.entries(porForma)) { formas[k] = (formas[k] || 0) + v; soma += v; }
   gravarDia(iso, { centavos: d.centavos + soma, comandas: d.comandas + 1, formas });
 }
-const zerarDia = iso => { delete memoriaDia[iso]; try { localStorage.removeItem(chaveDia(iso)); } catch {} };
-// Abertura de caixa e Saídas/Compras: valores do dia, guardados por data (separados do total vendido)
-const VALORES_DIA = ['abertura', 'saidas'];
+// Comandas finalizadas uma a uma (hora + valor por forma, troco já descontado), para o gráfico de crescimento do dia
+const memoriaComandas = {};
+const chaveComandas = iso => 'bookafe-comandas-dia-' + iso;
+function lerComandasDia(iso) {
+  try { const v = JSON.parse(localStorage.getItem(chaveComandas(iso))); if (Array.isArray(v)) return v; } catch {}
+  return memoriaComandas[iso] || [];
+}
+function guardarComanda(iso, c) {
+  const l = [...lerComandasDia(iso), c]; memoriaComandas[iso] = l;
+  try { localStorage.setItem(chaveComandas(iso), JSON.stringify(l)); } catch {}
+}
+const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
+// Abertura de caixa, Saídas/Compras e Coleta/Cofre: valores do dia, guardados por data (separados do total vendido)
+const VALORES_DIA = ['abertura', 'saidas', 'coleta'];
 const memoriaValor = {};
 const chaveValor = (tipo, iso) => `bookafe-${tipo}-${iso}`;
 function lerValor(tipo, iso) {
@@ -453,9 +485,12 @@ function renderTotais() {
     ...(f[''] ? [linha('Total do dia sem forma de pagamento', f[''])] : []),
     linha('Total do dia', dia.centavos, 'geral dia'));
   // Fechamento do dia: só aqui as saídas/compras são descontadas
+  const co = lerValor('coleta', iso), caixa = ab + (f.dinheiro || 0) - sa;
   $('fechamento').replaceChildren(
     linha('Resultado do dia (total do dia − saídas)', dia.centavos - sa, 'geral'),
-    linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', ab + (f.dinheiro || 0) - sa));
+    linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', caixa),
+    linha('Fechamento do caixa (abertura + total do dia − saídas)', ab + dia.centavos - sa, 'geral dia'));
+  $('pos-coleta').replaceChildren(...(co ? [linha('Fica no caixa em dinheiro (dinheiro no caixa − coleta)', caixa - co)] : []));
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
@@ -493,7 +528,8 @@ function calcularResultado() {
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
-    somarDia(iso, liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco)); // o troco volta para o cliente: entra no dia só o que ficou
+    const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
+    somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
     novaComanda();
     avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
@@ -560,7 +596,7 @@ function comandasDoCsv(texto) {
     const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(data || ''), total = parseValor(totalTxt || ''), valor = parseValor(valorTxt || '');
     if (!m || total === null || valor === null || !(formaTxt in FORMA_DO_TEXTO)) return null;
     const iso = `${m[3]}-${m[2]}-${m[1]}`, chave = `${iso}|${comanda}|${total}`;
-    if (!grupos.has(chave)) grupos.set(chave, { iso, total, formas: [], valores: [] });
+    if (!grupos.has(chave)) grupos.set(chave, { iso, hora: comanda, total, formas: [], valores: [] });
     const g = grupos.get(chave); g.formas.push(FORMA_DO_TEXTO[formaTxt]); g.valores.push(valor);
   }
   return [...grupos.values()];
@@ -595,11 +631,11 @@ function diasDoNavegador() {
   return dias;
 }
 
-let dadosRes = new Map(), fonteRes = '';
+let dadosRes = new Map(), etapasRes = new Map(), fonteRes = '';
 // Lê a pasta (se liberada) e junta com o navegador: para cada dia, vale a pasta; dias que só existem no navegador entram por ele.
 async function carregarResultados(pedirPermissao) {
   const nav = diasDoNavegador();
-  dadosRes = new Map(nav); fonteRes = nav.size ? 'Fonte: totais guardados neste navegador.' : 'Ainda não há comandas finalizadas neste navegador.';
+  dadosRes = new Map(nav); etapasRes = new Map(); fonteRes = nav.size ? 'Fonte: totais guardados neste navegador.' : 'Ainda não há comandas finalizadas neste navegador.';
   if (pastaComandas) {
     try {
       const opt = { mode: 'read' };
@@ -615,6 +651,10 @@ async function carregarResultados(pedirPermissao) {
         }
         const daPasta = diasDasComandas(lidas);
         for (const [iso, d] of daPasta) dadosRes.set(iso, d);
+        for (const c of lidas) { // comandas uma a uma, para o crescimento do dia
+          const pago = c.valores.reduce((a, b) => a + b, 0), l = etapasRes.get(c.iso) || [];
+          l.push({ hora: c.hora, formas: liquidoPorForma(c.formas, c.valores, Math.max(pago - c.total, 0)) }); etapasRes.set(c.iso, l);
+        }
         const soNav = [...nav.keys()].filter(iso => !daPasta.has(iso)).length;
         fonteRes = `Fonte: ${lidas.length} comanda${lidas.length === 1 ? '' : 's'} de ${arquivos} arquivo${arquivos === 1 ? '' : 's'} da pasta ${pastaComandas.name}`
           + (ignorados ? ` (${ignorados} arquivo${ignorados === 1 ? '' : 's'} com formato diferente ignorado${ignorados === 1 ? '' : 's'})` : '')
@@ -667,6 +707,37 @@ function renderResultados() {
     return linha([`${dataBR(iso).slice(0, 5)} ${sem}`], d.centavos, segs, dica);
   }));
   if (!diasMes.length) ul.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Nenhuma comanda neste mês.' }));
+  // Crescimento: dia = uma etapa por comanda (ordem da hora); mês = uma etapa por dia
+  const formasTxt = fs => Object.entries(fs).map(([k, v]) => `${nomeForma(k)}: ${fmt(v)}`).join(' · ');
+  const etapasDia = [...(etapasRes.get(dia) || lerComandasDia(dia))].sort((a, b) => a.hora < b.hora ? -1 : 1)
+    .map(c => ({ rotulo: c.hora, valor: Object.values(c.formas).reduce((a, b) => a + b, 0), detalhe: formasTxt(c.formas) }));
+  graficoCrescimento($('cresc-dia'), etapasDia, rDia.comandas ? 'Este dia não tem as comandas uma a uma (foram finalizadas antes desta versão). Leia a pasta das comandas para ver.' : 'Nenhuma comanda neste dia.');
+  graficoCrescimento($('cresc-mes'), diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), valor: d.centavos, detalhe: `${d.comandas} comanda${d.comandas === 1 ? '' : 's'} · ` + formasTxt(d.formas) })), 'Nenhuma comanda neste mês.');
+  $('h-cresc-dia').textContent = `Crescimento do dia ${dataBR(dia)}`;
+  $('h-cresc-mes').textContent = `Crescimento de ${nomeMes}`;
+}
+
+// Linha do valor acumulado. Cada etapa tem uma faixa vertical com a dica (etapa, quanto entrou, porcentagem e acumulado).
+const svgEl = (nome, attrs = {}) => { const e = document.createElementNS('http://www.w3.org/2000/svg', nome); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+function graficoCrescimento(box, etapas, vazio) {
+  if (!etapas.length) return box.replaceChildren(Object.assign(document.createElement('p'), { className: 'empty', textContent: vazio }));
+  const W = 600, H = 240, L = 14, R = 14, T = 34, B = 34, n = etapas.length;
+  let soma = 0; const acum = etapas.map(e => (soma += e.valor));
+  const max = Math.max(1, soma); // valores nunca negativos: o último ponto é o maior
+  const x = i => n === 1 ? W / 2 : L + i * (W - L - R) / (n - 1), y = v => T + (H - T - B) * (1 - v / max), meia = n === 1 ? W : (W - L - R) / (n - 1) / 2;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'cresc', role: 'img', 'aria-label': `Crescimento em ${n} etapa${n === 1 ? '' : 's'} até ${fmt(soma)}` });
+  const texto = (t, a) => { const e = svgEl('text', a); e.textContent = t; return e; };
+  svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(max), y2: y(max), class: 'grade' }), svgEl('line', { x1: L, x2: W - R, y1: y(0), y2: y(0), class: 'eixo' }),
+    texto(fmt(max), { x: L, y: T - 12 }), texto(etapas[0].rotulo, { x: L, y: H - 8 }), texto(etapas[n - 1].rotulo, { x: W - R, y: H - 8, 'text-anchor': 'end' }),
+    svgEl('polyline', { points: acum.map((v, i) => `${x(i)},${y(v)}`).join(' '), class: 'linha' }));
+  acum.forEach((v, i) => {
+    const g = svgEl('g', { class: 'etapa', tabindex: 0 }), x0 = i === 0 ? 0 : x(i) - meia, x1 = i === n - 1 ? W : x(i) + meia;
+    g.dataset.dica = `Etapa ${i + 1} de ${n} · ${etapas[i].rotulo}\nEntrou ${fmt(etapas[i].valor)} (${pct(etapas[i].valor, soma)} do total)\nAcumulado: ${fmt(v)} (${pct(v, soma)})`
+      + (etapas[i].detalhe ? '\n' + etapas[i].detalhe : '');
+    g.append(svgEl('rect', { x: x0, y: 0, width: x1 - x0, height: H, class: 'faixa' }), svgEl('circle', { cx: x(i), cy: y(v), r: 5, class: 'ponto' }));
+    svg.append(g);
+  });
+  box.replaceChildren(svg);
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque
@@ -678,15 +749,17 @@ function renderResultados() {
     dica.style.left = Math.max(8, Math.min(x + 14, innerWidth - r.width - 8)) + 'px';
     dica.style.top = Math.max(8, (y + 18 + r.height > innerHeight) ? y - r.height - 12 : y + 18) + 'px';
   };
-  const esconde = () => { dica.hidden = true; tela.querySelectorAll('li.ativa').forEach(l => l.classList.remove('ativa')); };
-  tela.addEventListener('pointermove', e => { const li = e.target.closest('li[data-dica]'); if (li && e.pointerType === 'mouse') mostra(li, e.clientX, e.clientY); });
-  tela.addEventListener('pointerout', e => { if (e.pointerType === 'mouse' && e.target.closest('li[data-dica]') && !e.relatedTarget?.closest?.('li[data-dica]')) esconde(); });
-  tela.addEventListener('click', e => { // toque no celular: abre/fecha a dica da linha
-    const li = e.target.closest('li[data-dica]'); if (!li) return esconde();
+  // Linhas das tabelas (li) e etapas do gráfico (g): no gráfico a dica abre junto do ponto
+  const perto = li => { const p = li.querySelector('.ponto'); if (p) { const r = p.getBoundingClientRect(); return [r.left, r.bottom]; } const r = li.getBoundingClientRect(); return [r.left + 8, r.bottom - 10]; };
+  const esconde = () => { dica.hidden = true; tela.querySelectorAll('.ativa').forEach(l => l.classList.remove('ativa')); };
+  tela.addEventListener('pointermove', e => { const li = e.target.closest('[data-dica]'); if (li && e.pointerType === 'mouse') mostra(li, e.clientX, e.clientY); });
+  tela.addEventListener('pointerout', e => { if (e.pointerType === 'mouse' && e.target.closest('[data-dica]') && !e.relatedTarget?.closest?.('[data-dica]')) esconde(); });
+  tela.addEventListener('click', e => { // toque no celular: abre/fecha a dica da linha ou da etapa
+    const li = e.target.closest('[data-dica]'); if (!li) return esconde();
     const ja = li.classList.contains('ativa'); esconde(); if (ja) return;
-    li.classList.add('ativa'); const r = li.getBoundingClientRect(); mostra(li, r.left + 8, r.bottom - 10);
+    li.classList.add('ativa'); mostra(li, ...perto(li));
   });
-  tela.addEventListener('focusin', e => { const li = e.target.closest('li[data-dica]'); if (li) { const r = li.getBoundingClientRect(); mostra(li, r.left + 8, r.bottom - 10); } });
+  tela.addEventListener('focusin', e => { const li = e.target.closest('[data-dica]'); if (li) mostra(li, ...perto(li)); });
   tela.addEventListener('focusout', esconde);
   addEventListener('scroll', esconde, { passive: true });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') esconde(); });
@@ -777,6 +850,15 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(d21.centavos === 25000 && d21.comandas === 2 && d21.formas.dinheiro === 5000 && d21.formas.pix === 8000, 'dia 21: troco sai do dinheiro (R$ 250,00)');
   ok(mesOut.centavos === 28000 && mesOut.comandas === 3 && mesOut.formas.debito === 3000, 'mês: soma dos dias (R$ 280,00)');
   ok(pct(8000, 25000) === '32,0%' && pct(0, 0) === '0,0%', 'porcentagem com uma casa');
+  ok(cms[0].hora === '14:00:00' && cms[2].hora === '10:00:00', 'hora da comanda lida do CSV');
+  zerarDia('1999-01-01'); guardarComanda('1999-01-01', { hora: '10:00:00', formas: { pix: 1000 } }); guardarComanda('1999-01-01', { hora: '11:00:00', formas: { dinheiro: 500 } });
+  const c99 = lerComandasDia('1999-01-01'); zerarDia('1999-01-01');
+  ok(c99.length === 2 && c99[1].formas.dinheiro === 500 && lerComandasDia('1999-01-01').length === 0, 'comandas do dia guardadas uma a uma e zeradas com o dia');
+  const gbox = document.createElement('div');
+  graficoCrescimento(gbox, [{ rotulo: '10:00', valor: 1000 }, { rotulo: '11:00', valor: 3000, detalhe: 'PIX: x' }], '');
+  const gd = [...gbox.querySelectorAll('.etapa')].map(g => g.dataset.dica);
+  ok(gd.length === 2 && gd[1].startsWith('Etapa 2 de 2 · 11:00') && gd[1].includes(`Acumulado: ${fmt(4000)} (100,0%)`) && gd[0].includes('(25,0% do total)'), 'gráfico de crescimento: uma etapa por comanda, com acumulado');
+  graficoCrescimento(gbox, [], 'vazio'); ok(gbox.textContent === 'vazio', 'gráfico sem etapas mostra aviso');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
   const el = $('teste'); el.hidden = false;
   el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
