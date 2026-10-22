@@ -183,9 +183,10 @@ ul.barras li.empty { display: block }
           <div class="err" id="total-err"></div>
         </div>
         <div class="field">
-          <label for="pix">Chave Pix de quem pagou a conta</label>
-          <input type="text" id="pix" class="plain" autocomplete="off" maxlength="100" aria-describedby="pix-hint">
-          <div class="hint" id="pix-hint">Opcional. CPF, e-mail, telefone ou chave aleatória. Entra na mensagem de cobrança.</div>
+          <label for="saidas">Saídas/Compras</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
+          <div class="err" id="saidas-err"></div>
+          <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Fica guardado para a data acima e é descontado do dinheiro no caixa.</div>
         </div>
         <div class="field">
           <span class="field-title">Pasta das comandas</span>
@@ -365,28 +366,31 @@ function somarDia(iso, porForma) {
   gravarDia(iso, { centavos: d.centavos + soma, comandas: d.comandas + 1, formas });
 }
 const zerarDia = iso => { delete memoriaDia[iso]; try { localStorage.removeItem(chaveDia(iso)); } catch {} };
-// Abertura de caixa: dinheiro inicial do dia, guardado por data (separado do total vendido)
-const memoriaAbertura = {};
-const chaveAbertura = iso => 'bookafe-abertura-' + iso;
-function lerAbertura(iso) {
-  try { const v = localStorage.getItem(chaveAbertura(iso)); if (v !== null) return Number(v) || 0; } catch {}
-  return memoriaAbertura[iso] || 0;
+// Abertura de caixa e Saídas/Compras: valores do dia, guardados por data (separados do total vendido)
+const VALORES_DIA = ['abertura', 'saidas'];
+const memoriaValor = {};
+const chaveValor = (tipo, iso) => `bookafe-${tipo}-${iso}`;
+function lerValor(tipo, iso) {
+  try { const v = localStorage.getItem(chaveValor(tipo, iso)); if (v !== null) return Number(v) || 0; } catch {}
+  return memoriaValor[chaveValor(tipo, iso)] || 0;
 }
-function gravarAbertura(iso, c) { memoriaAbertura[iso] = c; try { c ? localStorage.setItem(chaveAbertura(iso), String(c)) : localStorage.removeItem(chaveAbertura(iso)); } catch {} }
-function mostraAbertura() {
-  const c = lerAbertura($('data').value || hojeISO());
-  $('abertura').value = c ? reais(c) : ''; $('abertura').setAttribute('aria-invalid', 'false'); $('abertura-err').textContent = '';
+function gravarValor(tipo, iso, c) { memoriaValor[chaveValor(tipo, iso)] = c; try { c ? localStorage.setItem(chaveValor(tipo, iso), String(c)) : localStorage.removeItem(chaveValor(tipo, iso)); } catch {} }
+function mostraValoresDia() {
+  for (const tipo of VALORES_DIA) {
+    const c = lerValor(tipo, $('data').value || hojeISO());
+    $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
+  }
 }
 // Roda antes do "input" do formulário (que recalcula o quadro Total), então o Total já vê o valor novo
-$('abertura').addEventListener('input', () => {
-  const t = $('abertura').value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
-  $('abertura').setAttribute('aria-invalid', ruim ? 'true' : 'false');
-  $('abertura-err').textContent = ruim ? (v === null ? 'Valor inválido. Use números com até 2 casas, ex.: 150,00.' : `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`) : '';
-  if (!ruim) gravarAbertura($('data').value || hojeISO(), v);
+for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
+  const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
+  $(tipo).setAttribute('aria-invalid', ruim ? 'true' : 'false');
+  $(tipo + '-err').textContent = ruim ? (v === null ? 'Valor inválido. Use números com até 2 casas, ex.: 150,00.' : `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`) : '';
+  if (!ruim) gravarValor(tipo, $('data').value || hojeISO(), v);
 });
-$('data').addEventListener('input', mostraAbertura);
-mostraAbertura();
-// Depois de finalizar: comanda nova em branco, mantendo data, chave Pix e pasta
+$('data').addEventListener('input', mostraValoresDia);
+mostraValoresDia();
+// Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas e pasta
 function novaComanda() {
   pessoas = []; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
@@ -437,14 +441,15 @@ function renderTotais() {
     d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: fmt(b) }));
     return d;
   };
-  const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerAbertura(iso);
+  const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerValor('abertura', iso), sa = lerValor('saidas', iso);
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab),
+    linha('Saídas/Compras', sa),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linha('Total do dia em ' + nome, f[k] || 0)),
     ...(f[''] ? [linha('Total do dia sem forma de pagamento', f[''])] : []),
     linha('Total do dia', dia.centavos, 'geral dia'),
-    ...(ab ? [linha('Dinheiro no caixa (abertura + dinheiro do dia)', ab + (f.dinheiro || 0))] : []));
+    ...(ab || sa ? [linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', ab + (f.dinheiro || 0) - sa)] : []));
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
@@ -499,7 +504,7 @@ function calcularResultado() {
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
     cp.setAttribute('aria-label', `Copiar cobrança da pessoa ${i + 1}`);
     cp.addEventListener('click', async () => {
-      const ok = await copiarTexto(mensagemCobranca(p.nome.trim(), r.partes[i], $('pix').value));
+      const ok = await copiarTexto(mensagemCobranca(p.nome.trim(), r.partes[i]));
       avisar(ok ? 'Cobrança copiada' : 'Não foi possível copiar. Tente de novo.');
     });
     li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
@@ -750,8 +755,10 @@ if (/[?&]teste\b/.test(location.search)) {
      === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
-  gravarAbertura('1999-01-01', 15000); const ab99 = lerAbertura('1999-01-01'); gravarAbertura('1999-01-01', 0);
-  ok(ab99 === 15000 && lerAbertura('1999-01-01') === 0 && lerAbertura('1999-01-02') === 0, 'abertura de caixa guardada por data');
+  gravarValor('abertura', '1999-01-01', 15000); gravarValor('saidas', '1999-01-01', 4000);
+  const ab99 = lerValor('abertura', '1999-01-01'), sa99 = lerValor('saidas', '1999-01-01');
+  gravarValor('abertura', '1999-01-01', 0); gravarValor('saidas', '1999-01-01', 0);
+  ok(ab99 === 15000 && sa99 === 4000 && lerValor('abertura', '1999-01-01') === 0 && lerValor('saidas', '1999-01-02') === 0, 'abertura e saídas guardadas por data, separadas');
   ok(d99.centavos === 12550 && d99.comandas === 2 && d99.formas.pix === 8550 && d99.formas.credito === 4000 && lerDia('1999-01-01').centavos === 0, 'total do dia por forma acumula e zera');
   // Dashboard: CSV -> comandas -> dias -> mês, com troco
   const csv1 = csvComanda('21/10/2026', '14:00:00', 20000, [{ nome: 'A', pag: 'credito' }, { nome: 'B;C', pag: 'pix' }], [12000, 8000]);
