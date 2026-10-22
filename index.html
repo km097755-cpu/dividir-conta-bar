@@ -441,6 +441,19 @@ function guardarComanda(iso, c) {
   try { localStorage.setItem(chaveComandas(iso), JSON.stringify(l)); } catch {}
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
+// Zerar a porcentagem do mês: guarda quanto o mês tinha naquele momento (por mês AAAA-MM) e o quadro mostra só o que entrou depois
+const memoriaZeroMes = {};
+const chaveZeroMes = m => 'bookafe-zero-mes-' + m;
+function lerZeroMes(m) {
+  try { const v = JSON.parse(localStorage.getItem(chaveZeroMes(m))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
+  return memoriaZeroMes[m] || null;
+}
+function gravarZeroMes(m, v) { memoriaZeroMes[m] = v; try { v ? localStorage.setItem(chaveZeroMes(m), JSON.stringify(v)) : localStorage.removeItem(chaveZeroMes(m)); } catch {} }
+function descontarZero(r, z) {
+  const formas = {}; let centavos = 0;
+  for (const [k, v] of Object.entries(r.formas)) { const x = Math.max(0, v - (z.formas[k] || 0)); if (x) { formas[k] = x; centavos += x; } }
+  return { centavos, comandas: Math.max(0, r.comandas - z.comandas), formas };
+}
 // Abertura de caixa, Saídas/Compras e Coleta/Cofre: valores do dia, guardados por data (separados do total vendido)
 const VALORES_DIA = ['abertura', 'abastecimento', 'saidas', 'coleta'];
 const memoriaValor = {};
@@ -544,24 +557,34 @@ function renderTotais() {
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
-  const rM = somaDias(diasM.map(([, d]) => d)), etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
-  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escalaCrescimento(etM, k, v));
+  const mesIso = iso.slice(0, 7), zero = lerZeroMes(mesIso), rTudo = somaDias(diasM.map(([, d]) => d));
+  const rM = zero ? descontarZero(rTudo, zero) : rTudo, etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
+  const escMes = (k, v) => zero ? `\nContando desde ${zero.quando} (porcentagem zerada)` : escalaCrescimento(etM, k, v);
+  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escMes(k, v));
   $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
   $('mes-pct').replaceChildren(
-    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
+    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${zero ? `Desde ${zero.quando}` : `${diasM.length} dia${diasM.length === 1 ? '' : 's'}`} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
     ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
     Object.assign(linha('Total do mês', rM.centavos, 'geral dia destaque'), { tabIndex: 0 }));
-  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escalaCrescimento(etM, null, rM.centavos);
-  if (dia.comandas) {
-    const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
-    z.addEventListener('click', () => {
-      if (z.dataset.armado) { zerarDia(iso); calcular(); avisar('Total do dia zerado.'); return; }
-      z.dataset.armado = '1'; z.textContent = 'Toque de novo para zerar';
-      setTimeout(() => { if (z.isConnected) { delete z.dataset.armado; z.textContent = 'Zerar total do dia'; } }, 4000);
-    });
-    box.append(z);
-  }
+  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escMes(null, rM.centavos);
+  // Zerar a porcentagem não apaga nada: guarda o que já tinha e passa a contar só o que entrar depois
+  if (rTudo.comandas) $('mes-pct').append(botaoConfirma('Zerar porcentagem do mês', () => {
+    gravarZeroMes(mesIso, { ...rTudo, quando: `${dataBR(hojeISO())} ${horaAgora().slice(0, 5)}` }); renderTotais(); avisar('Porcentagem do mês zerada. Os totais dos dias continuam guardados.');
+  }));
+  if (zero) $('mes-pct').append(botaoConfirma('Voltar a contar o mês todo', () => { gravarZeroMes(mesIso, null); renderTotais(); avisar('A porcentagem voltou a contar o mês todo.'); }));
+  if (dia.comandas) box.append(botaoConfirma('Zerar total do dia', () => { zerarDia(iso); calcular(); avisar('Total do dia zerado.'); }));
+}
+
+// Botão que pede um segundo toque em até 4 s antes de agir (evita zerar sem querer)
+function botaoConfirma(texto, acao) {
+  const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
+  b.addEventListener('click', () => {
+    if (b.dataset.armado) return acao();
+    b.dataset.armado = '1'; b.textContent = 'Toque de novo para confirmar';
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armado; b.textContent = texto; } }, 4000);
+  });
+  return b;
 }
 
 function calcular() { calcularResultado(); renderTotais(); }
@@ -891,6 +914,10 @@ if (/[?&]teste\b/.test(location.search)) {
   const muitas = escalaCrescimento(Array.from({ length: 15 }, (_, i) => ({ rotulo: 'e' + i, formas: { pix: 100 } })), 'pix', 1500);
   ok(muitas.includes('… 3 etapas antes') && muitas.endsWith(`→ ${fmt(1500)} = 100,0%`), 'escala longa mostra as 12 últimas com o acumulado certo');
   ok(diaSeguinte('2026-10-31') === '2026-11-01' && diaSeguinte('2026-12-31') === '2027-01-01', 'dia seguinte vira o mês e o ano');
+  const dz = descontarZero({ centavos: 9000, comandas: 5, formas: { pix: 6000, dinheiro: 3000 } }, { centavos: 4000, comandas: 2, formas: { pix: 4000 } });
+  ok(dz.centavos === 5000 && dz.comandas === 3 && dz.formas.pix === 2000 && dz.formas.dinheiro === 3000, 'zerar porcentagem do mês conta só o que entrou depois');
+  gravarZeroMes('1999-01', { centavos: 1, comandas: 1, formas: {}, quando: 'x' }); const zm = lerZeroMes('1999-01'); gravarZeroMes('1999-01', null);
+  ok(zm.quando === 'x' && lerZeroMes('1999-01') === null, 'zerar e voltar a contar o mês todo');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
