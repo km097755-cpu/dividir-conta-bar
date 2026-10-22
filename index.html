@@ -139,7 +139,7 @@ ul.barras li.empty { display: block }
 <div class="wrap">
   <header>
     <h1>Bookafé (Comanda)</h1>
-    <p>Digite a data, a abertura de caixa, as saídas e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
+    <p>Digite a data, a abertura de caixa e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
   </header>
 
   <nav class="abas" role="tablist" aria-label="Telas do app">
@@ -178,12 +178,6 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Dinheiro no caixa no começo do dia. Fica guardado para a data acima e não entra no total vendido.</div>
         </div>
         <div class="field">
-          <label for="saidas">Saídas/Compras</label>
-          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
-          <div class="err" id="saidas-err"></div>
-          <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Fica guardado para a data acima e é descontado do dinheiro no caixa.</div>
-        </div>
-        <div class="field">
           <label for="total">Total da conta</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
           <div class="err" id="total-err"></div>
@@ -214,6 +208,16 @@ ul.barras li.empty { display: block }
       <div class="panel" id="resultado" aria-live="polite"></div>
       <h2 id="h-totais">Total</h2>
       <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
+      <h2 id="h-fechamento">Fechamento do dia</h2>
+      <div class="panel" aria-labelledby="h-fechamento">
+        <div class="field">
+          <label for="saidas">Saídas/Compras</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
+          <div class="err" id="saidas-err"></div>
+          <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Não mexe nas comandas: só entra no fechamento do dia da data escolhida.</div>
+        </div>
+        <div class="totais" id="fechamento" aria-live="polite"></div>
+      </div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
     </section>
@@ -381,12 +385,12 @@ function mostraValoresDia() {
     $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
   }
 }
-// Roda antes do "input" do formulário (que recalcula o quadro Total), então o Total já vê o valor novo
+// Só atualiza os quadros Total e Fechamento do dia; a comanda aberta não muda
 for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
   $(tipo).setAttribute('aria-invalid', ruim ? 'true' : 'false');
   $(tipo + '-err').textContent = ruim ? (v === null ? 'Valor inválido. Use números com até 2 casas, ex.: 150,00.' : `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`) : '';
-  if (!ruim) gravarValor(tipo, $('data').value || hojeISO(), v);
+  if (!ruim) { gravarValor(tipo, $('data').value || hojeISO(), v); renderTotais(); }
 });
 $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
@@ -445,11 +449,13 @@ function renderTotais() {
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab),
-    linha('Saídas/Compras', sa),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linha('Total do dia em ' + nome, f[k] || 0)),
     ...(f[''] ? [linha('Total do dia sem forma de pagamento', f[''])] : []),
-    linha('Total do dia', dia.centavos, 'geral dia'),
-    ...(ab || sa ? [linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', ab + (f.dinheiro || 0) - sa)] : []));
+    linha('Total do dia', dia.centavos, 'geral dia'));
+  // Fechamento do dia: só aqui as saídas/compras são descontadas
+  $('fechamento').replaceChildren(
+    linha('Resultado do dia (total do dia − saídas)', dia.centavos - sa, 'geral'),
+    linha('Dinheiro no caixa (abertura + dinheiro do dia − saídas)', ab + (f.dinheiro || 0) - sa));
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
