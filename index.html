@@ -101,6 +101,9 @@ ul.people .pvalor { font-family: var(--f-num) }
 .totais .pc { font-family: var(--f-num); font-size: .85rem; color: var(--muted); text-align: right }
 .totais [data-dica]:hover, .totais [data-dica]:focus-visible, .totais [data-dica].ativa { background: var(--accent-soft); outline: none }
 @media (max-width: 480px) { .totais .forma { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 4px } .totais .forma .trilho { grid-column: 1 / -1; grid-row: 2 } }
+/* Valores principais (Total do dia, Sobra para a abertura, Total do mês): maiores e em selo */
+.totais .destaque { align-items: center }
+.totais .destaque > span:last-child { font-size: 1.45rem; font-weight: 800; color: var(--accent); background: var(--accent-soft); padding: 2px 12px; border-radius: 8px }
 .totais .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
@@ -519,7 +522,7 @@ function renderTotais() {
     linha('Abertura de caixa', ab),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
-    Object.assign(linha('Total do dia', dia.centavos, 'geral dia'), { tabIndex: 0 }));
+    Object.assign(linha('Total do dia', dia.centavos, 'geral dia destaque'), { tabIndex: 0 }));
   box.lastChild.dataset.dica = `Total do dia: ${fmt(dia.centavos)}` + escalaCrescimento(cmds, null, dia.centavos);
   box.append(Object.assign(document.createElement('p'), { className: 'hint', textContent: 'Passe o mouse (ou toque) em cada linha para ver a escala de crescimento.' }));
   // Fechamento do dia: só aqui as saídas/compras e a coleta são descontadas
@@ -528,7 +531,7 @@ function renderTotais() {
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (abertura + vendas)', caixa),
     linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia'));
-  $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral'));
+  $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
   const rM = somaDias(diasM.map(([, d]) => d)), etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
@@ -538,7 +541,7 @@ function renderTotais() {
     Object.assign(document.createElement('p'), { className: 'label', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
     ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
-    Object.assign(linha('Total do mês', rM.centavos, 'geral dia'), { tabIndex: 0 }));
+    Object.assign(linha('Total do mês', rM.centavos, 'geral dia destaque'), { tabIndex: 0 }));
   $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escalaCrescimento(etM, null, rM.centavos);
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
