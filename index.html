@@ -339,11 +339,15 @@ async function salvarCopia(nome, texto) {
 const PAGAMENTOS = { pix: 'PIX', debito: 'Débito', credito: 'Crédito', dinheiro: 'Dinheiro' };
 const CLASSE_FORMA = { pix: 'f-pix', debito: 'f-debito', credito: 'f-credito', dinheiro: 'f-dinheiro', '': 'f-sem' };
 const pct = (v, t) => (t ? v / t * 100 : 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
-// Escala de crescimento de uma forma (k) ou do total (k = null): cada etapa com quanto entrou e o acumulado; mostra as 12 últimas
-function escalaCrescimento(etapas, k) {
+// Escala de crescimento de uma forma (k) ou do total (k = null) até `total`: cada etapa com quanto entrou e o acumulado, em reais e em %.
+// O que está no total sem etapa registrada (comandas finalizadas antes da escala existir) vira a primeira linha. Mostra as 12 últimas.
+function escalaCrescimento(etapas, k, total = 0) {
+  const vs = etapas.map(e => ({ r: e.rotulo, v: k == null ? Object.values(e.formas).reduce((a, b) => a + b, 0) : e.formas[k] || 0 })).filter(e => e.v);
+  const registrado = vs.reduce((a, e) => a + e.v, 0);
+  if (total > registrado) vs.unshift({ r: 'antes (sem hora)', v: total - registrado });
+  const base = Math.max(total, registrado);
   let acc = 0;
-  const l = etapas.map(e => ({ r: e.rotulo, v: k == null ? Object.values(e.formas).reduce((a, b) => a + b, 0) : e.formas[k] || 0 }))
-    .filter(e => e.v).map(e => `${e.r}  +${fmt(e.v)}  → ${fmt(acc += e.v)}`);
+  const l = vs.map(e => `${e.r}  +${fmt(e.v)} (+${pct(e.v, base)})  → ${fmt(acc += e.v)} = ${pct(acc, base)}`);
   if (!l.length) return '';
   const antes = l.length - 12;
   return '\nEscala de crescimento:\n' + (antes > 0 ? `… ${antes} etapa${antes === 1 ? '' : 's'} antes\n` : '') + l.slice(-12).join('\n');
@@ -508,16 +512,15 @@ function renderTotais() {
   const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerValor('abertura', iso), sa = lerValor('saidas', iso);
   // Linha de cada forma: barra na cor da forma + % do total do dia; a dica mostra a escala de crescimento comanda a comanda
   const cmds = [...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1).map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas }));
-  const semEscala = dia.comandas && !cmds.length ? '\n(As comandas deste dia foram finalizadas antes da escala de crescimento.)' : '';
   const linhaForma = (k, nome, v = f[k] || 0) => linhaFormaPct(k, nome, v, dia.centavos,
-    `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + (escalaCrescimento(cmds, k) || semEscala));
+    `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + escalaCrescimento(cmds, k, v));
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
     Object.assign(linha('Total do dia', dia.centavos, 'geral dia'), { tabIndex: 0 }));
-  box.lastChild.dataset.dica = `Total do dia: ${fmt(dia.centavos)}` + (escalaCrescimento(cmds, null) || semEscala);
+  box.lastChild.dataset.dica = `Total do dia: ${fmt(dia.centavos)}` + escalaCrescimento(cmds, null, dia.centavos);
   box.append(Object.assign(document.createElement('p'), { className: 'hint', textContent: 'Passe o mouse (ou toque) em cada linha para ver a escala de crescimento.' }));
   // Fechamento do dia: só aqui as saídas/compras e a coleta são descontadas
   const co = lerValor('coleta', iso), caixa = ab + dia.centavos;
@@ -529,14 +532,14 @@ function renderTotais() {
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
   const rM = somaDias(diasM.map(([, d]) => d)), etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
-  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escalaCrescimento(etM, k));
+  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escalaCrescimento(etM, k, v));
   $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
   $('mes-pct').replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `${diasM.length} dia${diasM.length === 1 ? '' : 's'} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
     ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
     Object.assign(linha('Total do mês', rM.centavos, 'geral dia'), { tabIndex: 0 }));
-  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escalaCrescimento(etM, null);
+  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escalaCrescimento(etM, null, rM.centavos);
   if (dia.comandas) {
     const z = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: 'Zerar total do dia' });
     z.addEventListener('click', () => {
@@ -732,7 +735,7 @@ function renderResultados() {
     box.replaceChildren(...ks.map(k => {
       const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
       return linha([bol, nomeForma(k)], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
-        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}` + escalaCrescimento(etapas, k));
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}` + escalaCrescimento(etapas, k, v));
     }));
     if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
   };
@@ -903,12 +906,14 @@ if (/[?&]teste\b/.test(location.search)) {
   const gd = [...gbox.querySelectorAll('.etapa')].map(g => g.dataset.dica);
   ok(gd.length === 2 && gd[1].startsWith('Etapa 2 de 2 · 11:00') && gd[1].includes(`Acumulado: ${fmt(4000)} (100,0%)`) && gd[0].includes('(25,0% do total)'), 'gráfico de crescimento: uma etapa por comanda, com acumulado');
   graficoCrescimento(gbox, [], 'vazio'); ok(gbox.textContent === 'vazio', 'gráfico sem etapas mostra aviso');
-  const esc = escalaCrescimento([{ rotulo: '10:00', formas: { pix: 1000 } }, { rotulo: '11:00', formas: { dinheiro: 500 } }, { rotulo: '12:00', formas: { pix: 2000, dinheiro: 100 } }], 'pix');
-  ok(esc === `\nEscala de crescimento:\n10:00  +${fmt(1000)}  → ${fmt(1000)}\n12:00  +${fmt(2000)}  → ${fmt(3000)}`
-     && escalaCrescimento([{ rotulo: 'a', formas: { pix: 1 } }, { rotulo: 'b', formas: { debito: 2 } }], null).endsWith(`→ ${fmt(3)}`)
-     && escalaCrescimento([], 'pix') === '', 'escala de crescimento por forma e do total');
-  const muitas = escalaCrescimento(Array.from({ length: 15 }, (_, i) => ({ rotulo: 'e' + i, formas: { pix: 100 } })), 'pix');
-  ok(muitas.includes('… 3 etapas antes') && muitas.endsWith(`→ ${fmt(1500)}`), 'escala longa mostra as 12 últimas com o acumulado certo');
+  const esc = escalaCrescimento([{ rotulo: '10:00', formas: { pix: 1000 } }, { rotulo: '11:00', formas: { dinheiro: 500 } }, { rotulo: '12:00', formas: { pix: 2000, dinheiro: 100 } }], 'pix', 3000);
+  ok(esc === `\nEscala de crescimento:\n10:00  +${fmt(1000)} (+33,3%)  → ${fmt(1000)} = 33,3%\n12:00  +${fmt(2000)} (+66,7%)  → ${fmt(3000)} = 100,0%`
+     && escalaCrescimento([{ rotulo: 'a', formas: { pix: 1 } }, { rotulo: 'b', formas: { debito: 2 } }], null, 3).endsWith(`→ ${fmt(3)} = 100,0%`)
+     && escalaCrescimento([], 'pix', 0) === '', 'escala de crescimento por forma e do total, em reais e em %');
+  ok(escalaCrescimento([{ rotulo: '10:00', formas: { pix: 100 } }], 'pix', 400) === `\nEscala de crescimento:\nantes (sem hora)  +${fmt(300)} (+75,0%)  → ${fmt(300)} = 75,0%\n10:00  +${fmt(100)} (+25,0%)  → ${fmt(400)} = 100,0%`,
+     'comandas sem hora entram como primeira etapa e a escala fecha no total');
+  const muitas = escalaCrescimento(Array.from({ length: 15 }, (_, i) => ({ rotulo: 'e' + i, formas: { pix: 100 } })), 'pix', 1500);
+  ok(muitas.includes('… 3 etapas antes') && muitas.endsWith(`→ ${fmt(1500)} = 100,0%`), 'escala longa mostra as 12 últimas com o acumulado certo');
   ok(diaSeguinte('2026-10-31') === '2026-11-01' && diaSeguinte('2026-12-31') === '2027-01-01', 'dia seguinte vira o mês e o ano');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
