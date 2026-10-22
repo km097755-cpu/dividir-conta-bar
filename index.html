@@ -25,17 +25,21 @@
   --f-num: "JetBrains Mono", ui-monospace, Consolas, monospace;
   /* cor fixa de cada forma de pagamento no dashboard */
   --c-pix: #1f7a73; --c-debito: #3559a8; --c-credito: #b8620f; --c-dinheiro: #2e7d3a; --c-sem: #8a6e66;
+  /* verde oliva dos quadros Resultado do dia / do mês */
+  --oliva: #e5e7c9; --oliva-line: #9a9f5e;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
   --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
   --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark;
-  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1 } }
+  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1;
+  --oliva: #3a3d1c; --oliva-line: #6e7335 } }
 :root[data-theme="dark"] {
   --bg: #170b09; --surface: #4a1d17; --ink: #fbeee9; --muted: #e2bcb2; --line: #7a3a2f;
   --accent: #e9a35c; --accent-ink: #1f0d06; --accent-soft: #6b2c22;
   --ok: #8fe3a8; --err: #ffb4a8; --err-soft: #2a0c09; color-scheme: dark;
-  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1 }
+  --c-pix: #5fd0c4; --c-debito: #93b4f5; --c-credito: #f0b56f; --c-dinheiro: #8fe3a8; --c-sem: #c8aaa1;
+  --oliva: #3a3d1c; --oliva-line: #6e7335 }
 
 * { box-sizing: border-box }
 [hidden] { display: none !important }
@@ -54,6 +58,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
+.panel.oliva { background: var(--oliva); border-color: var(--oliva-line) }
 .field { display: grid; gap: 4px }
 .field label, .field-title { font-weight: 700 }
 .field .btn-ghost { justify-self: start }
@@ -164,8 +169,8 @@ ul.barras li.empty { display: block }
       <p class="hint" id="res-fonte" aria-live="polite"></p>
     </div>
     <div class="res-grid" style="margin-top:24px">
-      <section class="panel" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
-      <section class="panel" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
+      <section class="panel oliva" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
+      <section class="panel oliva" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
     </div>
     <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul></section>
     <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
