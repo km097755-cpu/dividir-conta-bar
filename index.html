@@ -53,6 +53,7 @@ section { display: grid; gap: 16px; min-width: 0 }
 h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin: 0 }
 .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
+.blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
 .field { display: grid; gap: 4px }
 .field label, .field-title { font-weight: 700 }
 .field .btn-ghost { justify-self: start }
@@ -171,9 +172,10 @@ ul.barras li.empty { display: block }
   <div class="dica" id="dica" role="tooltip" hidden></div>
 
   <div class="grid" id="tela-comanda" role="tabpanel" aria-labelledby="aba-comanda">
-    <section aria-labelledby="h-conta">
-      <h2 id="h-conta">Conta</h2>
-      <form class="panel" id="form-conta" novalidate>
+    <section aria-labelledby="h-caixa">
+      <form class="blocos" id="form-conta" novalidate>
+       <h2 id="h-caixa">Caixa</h2>
+       <div class="panel">
         <div class="field">
           <label for="data">Data</label>
           <input type="date" id="data" class="plain">
@@ -195,6 +197,9 @@ ul.barras li.empty { display: block }
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total-caixa" readonly aria-describedby="total-caixa-hint"></div>
           <div class="hint" id="total-caixa-hint">Abertura + abastecimento (calculado sozinho).</div>
         </div>
+       </div>
+       <h2 id="h-conta">Conta</h2>
+       <div class="panel">
         <div class="field">
           <label for="total">Total da conta</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
@@ -205,6 +210,7 @@ ul.barras li.empty { display: block }
           <button type="button" class="btn-ghost" id="escolher-pasta">Escolher pasta das comandas</button>
           <div class="hint" id="pasta-hint">Cada comanda finalizada é salva como arquivo nesta pasta (ex.: E:\Bookafé). Sem pasta escolhida, o arquivo vai para Downloads.</div>
         </div>
+       </div>
       </form>
 
       <h2 id="h-pessoas">Pagamentos</h2>
