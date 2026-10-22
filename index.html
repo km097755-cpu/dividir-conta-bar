@@ -101,9 +101,9 @@ ul.people .pvalor { font-family: var(--f-num) }
 .totais .pc { font-family: var(--f-num); font-size: .85rem; color: var(--muted); text-align: right }
 .totais [data-dica]:hover, .totais [data-dica]:focus-visible, .totais [data-dica].ativa { background: var(--accent-soft); outline: none }
 @media (max-width: 480px) { .totais .forma { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 4px } .totais .forma .trilho { grid-column: 1 / -1; grid-row: 2 } }
-/* Valores principais (Total do dia, Sobra para a abertura, Total do mês): maiores e em selo */
+/* Valores principais (Total do dia, Fechamento do caixa, Sobra para a abertura, Total do mês): maiores e em selo */
 .totais .destaque { align-items: center }
-.totais .destaque > span:last-child { font-size: 1.45rem; font-weight: 800; color: var(--accent); background: var(--accent-soft); padding: 2px 12px; border-radius: 8px }
+.totais .destaque > span:last-child { font-size: 1.3rem; font-weight: 800; color: var(--accent); background: var(--accent-soft); padding: 1px 10px; border-radius: 8px }
 .totais .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
@@ -530,7 +530,7 @@ function renderTotais() {
   $('fechamento').replaceChildren(
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (abertura + vendas)', caixa),
-    linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia'));
+    linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia destaque'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
