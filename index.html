@@ -195,7 +195,7 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Dinheiro no caixa no começo do dia. Fica guardado para a data acima e não entra no total vendido.</div>
         </div>
         <div class="field">
-          <label for="abastecimento">Abastecimento de caixa</label>
+          <label for="abastecimento">Suprimento de caixa</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abastecimento" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abastecimento-err abastecimento-hint"></div>
           <div class="err" id="abastecimento-err"></div>
           <div class="hint" id="abastecimento-hint">Dinheiro colocado no caixa durante o dia (reforço de troco). Fica guardado para a data acima e não entra no total vendido.</div>
@@ -203,7 +203,7 @@ ul.barras li.empty { display: block }
         <div class="field">
           <label for="total-caixa">Valor total do caixa</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total-caixa" readonly aria-describedby="total-caixa-hint"></div>
-          <div class="hint" id="total-caixa-hint">Abertura + abastecimento (calculado sozinho).</div>
+          <div class="hint" id="total-caixa-hint">Abertura + suprimento (calculado sozinho).</div>
         </div>
        </div>
        <h2 id="h-conta">Conta</h2>
@@ -361,7 +361,7 @@ function copiaGeral(dias, porDia) {
     if (!v.comandas && !ab && !abs && !sa && !co) continue;
     resumo.push([dataBR(d), ...[ab, abs, v.formas.pix || 0, v.formas.debito || 0, v.formas.credito || 0, v.formas.dinheiro || 0, v.centavos, sa, co, ab + abs + v.centavos - sa - co].map(reais), v.comandas]);
   }
-  const cab = 'Data;Abertura;Abastecimento;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Fechamento do caixa;Comandas';
+  const cab = 'Data;Abertura;Suprimento;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Fechamento do caixa;Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
 async function lerComandasDaPasta(iso) {
@@ -591,7 +591,7 @@ function renderTotais() {
     return d;
   };
   const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerValor('abertura', iso), abs = lerValor('abastecimento', iso), sa = lerValor('saidas', iso);
-  $('total-caixa').value = reais(ab + abs); // Valor total do caixa = abertura + abastecimento
+  $('total-caixa').value = reais(ab + abs); // Valor total do caixa = abertura + suprimento (guardado com a chave antiga "abastecimento")
   // Linha de cada forma: barra na cor da forma + % do total do dia; a dica mostra a escala de crescimento comanda a comanda
   const cmds = [...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1).map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas }));
   const linhaForma = (k, nome, v = f[k] || 0) => linhaFormaPct(k, nome, v, dia.centavos,
@@ -599,7 +599,7 @@ function renderTotais() {
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label realce', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab, 'destaque'),
-    linha('Abastecimento de caixa', abs, 'destaque'),
+    linha('Suprimento de caixa', abs, 'destaque'),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
     Object.assign(linha('Total do dia', dia.centavos, 'geral dia destaque'), { tabIndex: 0 }));
