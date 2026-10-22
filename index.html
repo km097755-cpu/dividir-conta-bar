@@ -111,7 +111,8 @@ ul.people .pvalor { font-family: var(--f-num) }
 .totais .destaque { align-items: center }
 .totais .destaque > span:last-child { font-size: 1.15rem; font-weight: 800; color: var(--accent); background: var(--accent-soft); padding: 1px 8px; border-radius: 7px }
 .totais p.realce { color: var(--accent); font-size: .88rem; font-weight: 800 } /* rótulo "Dia … · N comandas" e "N dias · N comandas" */
-.totais .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
+.zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
+.acoes { display: grid; gap: 4px } .acoes:empty { display: none } .acoes .hint { margin: 0; text-align: right }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
@@ -169,8 +170,8 @@ ul.barras li.empty { display: block }
       <p class="hint" id="res-fonte" aria-live="polite"></p>
     </div>
     <div class="res-grid" style="margin-top:24px">
-      <section class="panel oliva" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
-      <section class="panel oliva" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
+      <section class="panel oliva" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul><div class="acoes" id="acoes-dia"></div></section>
+      <section class="panel oliva" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul><div class="acoes" id="acoes-mes"></div></section>
     </div>
     <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul></section>
     <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
@@ -446,14 +447,16 @@ function guardarComanda(iso, c) {
   try { localStorage.setItem(chaveComandas(iso), JSON.stringify(l)); } catch {}
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
-// Zerar a porcentagem do mês: guarda quanto o mês tinha naquele momento (por mês AAAA-MM) e o quadro mostra só o que entrou depois
-const memoriaZeroMes = {};
-const chaveZeroMes = m => 'bookafe-zero-mes-' + m;
-function lerZeroMes(m) {
-  try { const v = JSON.parse(localStorage.getItem(chaveZeroMes(m))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
-  return memoriaZeroMes[m] || null;
+// Zerar um quadro sem apagar nada: guarda quanto ele tinha naquele momento (o "marco") e o quadro mostra só o que entrou depois.
+// Chaves: 'mes-AAAA-MM' (Porcentagem do mês), 'res-dia-AAAA-MM-DD' e 'res-mes-AAAA-MM' (aba Resultados)
+const memoriaMarco = {};
+const chaveMarco = c => 'bookafe-zero-' + c;
+function lerMarco(c) {
+  try { const v = JSON.parse(localStorage.getItem(chaveMarco(c))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
+  return memoriaMarco[c] || null;
 }
-function gravarZeroMes(m, v) { memoriaZeroMes[m] = v; try { v ? localStorage.setItem(chaveZeroMes(m), JSON.stringify(v)) : localStorage.removeItem(chaveZeroMes(m)); } catch {} }
+function gravarMarco(c, v) { memoriaMarco[c] = v; try { v ? localStorage.setItem(chaveMarco(c), JSON.stringify(v)) : localStorage.removeItem(chaveMarco(c)); } catch {} }
+const agoraTxt = () => `${dataBR(hojeISO())} ${horaAgora().slice(0, 5)}`;
 function descontarZero(r, z) {
   const formas = {}; let centavos = 0;
   for (const [k, v] of Object.entries(r.formas)) { const x = Math.max(0, v - (z.formas[k] || 0)); if (x) { formas[k] = x; centavos += x; } }
@@ -562,7 +565,7 @@ function renderTotais() {
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
-  const mesIso = iso.slice(0, 7), zero = lerZeroMes(mesIso), rTudo = somaDias(diasM.map(([, d]) => d));
+  const mesIso = iso.slice(0, 7), zero = lerMarco('mes-' + mesIso), rTudo = somaDias(diasM.map(([, d]) => d));
   const rM = zero ? descontarZero(rTudo, zero) : rTudo, etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
   const escMes = (k, v) => zero ? `\nContando desde ${zero.quando} (porcentagem zerada)` : escalaCrescimento(etM, k, v);
   const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, nome, v, rM.centavos, `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}` + escMes(k, v));
@@ -575,9 +578,9 @@ function renderTotais() {
   $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escMes(null, rM.centavos);
   // Zerar a porcentagem não apaga nada: guarda o que já tinha e passa a contar só o que entrar depois
   if (rTudo.comandas) $('mes-pct').append(botaoConfirma('Zerar porcentagem do mês', () => {
-    gravarZeroMes(mesIso, { ...rTudo, quando: `${dataBR(hojeISO())} ${horaAgora().slice(0, 5)}` }); renderTotais(); avisar('Porcentagem do mês zerada. Os totais dos dias continuam guardados.');
+    gravarMarco('mes-' + mesIso, { ...rTudo, quando: agoraTxt() }); renderTotais(); avisar('Porcentagem do mês zerada. Os totais dos dias continuam guardados.');
   }));
-  if (zero) $('mes-pct').append(botaoConfirma('Voltar a contar o mês todo', () => { gravarZeroMes(mesIso, null); renderTotais(); avisar('A porcentagem voltou a contar o mês todo.'); }));
+  if (zero) $('mes-pct').append(botaoConfirma('Voltar a contar o mês todo', () => { gravarMarco('mes-' + mesIso, null); renderTotais(); avisar('A porcentagem voltou a contar o mês todo.'); }));
   if (dia.comandas) box.append(botaoConfirma('Zerar total do dia', () => { zerarDia(iso); calcular(); avisar('Total do dia zerado.'); }));
 }
 
@@ -776,13 +779,22 @@ function renderResultados() {
     box.replaceChildren(...ks.map(k => {
       const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
       return linha([bol, nomeForma(k)], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
-        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}` + escalaCrescimento(etapas, k, v));
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'));
     }));
     if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
   };
   const cmdDia = [...(etapasRes.get(dia) || lerComandasDia(dia))].sort((a, b) => a.hora < b.hora ? -1 : 1);
-  cards($('cards-dia'), rDia); formas($('formas-dia'), rDia, 'do dia', cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })));
-  cards($('cards-mes'), rMes); formas($('formas-mes'), rMes, 'do mês', diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })));
+  // Zerar o quadro (sem apagar nada): com marco, mostra só o que entrou depois de zerar
+  const zDia = lerMarco('res-dia-' + dia), zMes = lerMarco('res-mes-' + mes);
+  const vDia = zDia ? descontarZero(rDia, zDia) : rDia, vMes = zMes ? descontarZero(rMes, zMes) : rMes;
+  cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', zDia ? null : cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })));
+  cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', zMes ? null : diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })));
+  const acoes = (box, chave, r, z, oque) => box.replaceChildren(
+    ...(z ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: `Zerado em ${z.quando}: mostrando só o que entrou depois.` })] : []),
+    ...(r.comandas ? [botaoConfirma(`Zerar ${oque}`, () => { gravarMarco(chave, { ...r, quando: agoraTxt() }); renderResultados(); })] : []),
+    ...(z ? [botaoConfirma('Voltar a contar tudo', () => { gravarMarco(chave, null); renderResultados(); })] : []));
+  acoes($('acoes-dia'), 'res-dia-' + dia, rDia, zDia, 'resultado do dia');
+  acoes($('acoes-mes'), 'res-mes-' + mes, rMes, zMes, 'resultado do mês');
   $('h-res-dia').textContent = `Resultado do dia ${dataBR(dia)}`;
   $('h-res-mes').textContent = `Resultado de ${nomeMes}`;
   $('h-dias').textContent = `Mês de ${nomeMes}`;
@@ -921,8 +933,8 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(diaSeguinte('2026-10-31') === '2026-11-01' && diaSeguinte('2026-12-31') === '2027-01-01', 'dia seguinte vira o mês e o ano');
   const dz = descontarZero({ centavos: 9000, comandas: 5, formas: { pix: 6000, dinheiro: 3000 } }, { centavos: 4000, comandas: 2, formas: { pix: 4000 } });
   ok(dz.centavos === 5000 && dz.comandas === 3 && dz.formas.pix === 2000 && dz.formas.dinheiro === 3000, 'zerar porcentagem do mês conta só o que entrou depois');
-  gravarZeroMes('1999-01', { centavos: 1, comandas: 1, formas: {}, quando: 'x' }); const zm = lerZeroMes('1999-01'); gravarZeroMes('1999-01', null);
-  ok(zm.quando === 'x' && lerZeroMes('1999-01') === null, 'zerar e voltar a contar o mês todo');
+  gravarMarco('mes-1999-01', { centavos: 1, comandas: 1, formas: {}, quando: 'x' }); const zm = lerMarco('mes-1999-01'); gravarMarco('mes-1999-01', null);
+  ok(zm.quando === 'x' && lerMarco('mes-1999-01') === null && lerMarco('res-dia-1999-01-01') === null, 'zerar e voltar a contar o mês todo');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
   const falhas = log.filter(l => l.startsWith('FALHA')).length;
