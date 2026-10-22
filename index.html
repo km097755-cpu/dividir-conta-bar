@@ -165,7 +165,7 @@ ul.barras li.empty { display: block }
       <section class="panel" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
       <section class="panel" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
     </div>
-    <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Dias do mês</h2><ul class="barras" id="dias-mes"></ul></section>
+    <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul></section>
     <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
   </section>
   <div class="dica" id="dica" role="tooltip" hidden></div>
@@ -733,9 +733,13 @@ function renderResultados() {
   cards($('cards-mes'), rMes); formas($('formas-mes'), rMes, 'do mês', diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })));
   $('h-res-dia').textContent = `Resultado do dia ${dataBR(dia)}`;
   $('h-res-mes').textContent = `Resultado de ${nomeMes}`;
-  $('h-dias').textContent = `Dias de ${nomeMes}`;
+  $('h-dias').textContent = `Mês de ${nomeMes}`;
+  // Todos os dias do mês (01 ao último), com R$ 0,00 nos dias sem comanda
+  const porDia = new Map(diasMes), todosDias = Array.from({ length: new Date(+ano, +mm, 0).getDate() }, (_, i) => {
+    const iso = `${mes}-${String(i + 1).padStart(2, '0')}`; return [iso, porDia.get(iso) || { centavos: 0, comandas: 0, formas: {} }];
+  });
   const maior = Math.max(1, ...diasMes.map(([, d]) => d.centavos)), ul = $('dias-mes');
-  ul.replaceChildren(...diasMes.map(([iso, d]) => {
+  ul.replaceChildren(...todosDias.map(([iso, d]) => {
     const sem = new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
     const ks = [...Object.keys(PAGAMENTOS), ''].filter(k => d.formas[k]);
     const segs = ks.map(k => [CLASSE_FORMA[k], d.formas[k] / maior * 100]);
@@ -743,7 +747,6 @@ function renderResultados() {
       + ks.map(k => `${nomeForma(k)}: ${pct(d.formas[k], d.centavos)} (${fmt(d.formas[k])})`).join('\n');
     return linha([`${dataBR(iso).slice(0, 5)} ${sem}`], d.centavos, segs, dica);
   }));
-  if (!diasMes.length) ul.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Nenhuma comanda neste mês.' }));
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque, nas duas abas (quadro Total e Resultados)
