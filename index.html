@@ -209,14 +209,10 @@ ul.barras li.empty { display: block }
        <h2 id="h-conta">Conta</h2>
        <div class="panel">
         <div class="field">
-          <label for="cliente">Nome do cliente</label>
-          <input type="text" id="cliente" class="plain" autocomplete="off" maxlength="60" placeholder="Quem está fechando a conta" aria-describedby="cliente-hint">
-          <div class="hint" id="cliente-hint">Opcional. Entra na planilha e na cópia da comanda no lugar de "Pessoa 1", "Pessoa 2"… quando o pagamento não tiver nome. Limpa sozinho na comanda nova.</div>
-        </div>
-        <div class="field">
-          <label for="senha">Senha (número)</label>
-          <input type="text" id="senha" class="plain" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="Ex.: 23" aria-describedby="senha-hint">
-          <div class="hint" id="senha-hint">Cada comanda recebe sozinha o próximo número do dia (1, 2, 3…); dá para trocar ou apagar. Aparece como "Senha 23" ou junto com o nome ("Carlos (senha 23)").</div>
+          <label for="senha">Senha de quem fecha a conta (4 dígitos)</label>
+          <input type="password" id="senha" class="plain" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="••••" required aria-describedby="senha-err senha-hint">
+          <div class="err" id="senha-err"></div>
+          <div class="hint" id="senha-hint">Obrigatória para finalizar a comanda. Só quem tem senha cadastrada pode fechar a conta.</div>
         </div>
         <div class="field">
           <label for="total">Total da conta</label>
@@ -317,20 +313,20 @@ const horaAgora = () => new Date().toTimeString().slice(0, 8);
 const reais = c => (c / 100).toFixed(2).replace('.', ',');
 // Nome seguro para Excel: sem tabulação/quebra e sem =, +, -, @ no começo (o Excel trataria como fórmula)
 const limpaNome = s => String(s || '').replace(/[\t\r\n]/g, ' ').trim().replace(/^[=+\-@]+/, '').trim();
-// Quem está fechando a conta: nome e/ou senha (número) — "Carlos (senha 23)", "Carlos" ou "Senha 23"
-const clienteTxt = () => {
-  const n = limpaNome(document.getElementById('cliente')?.value), s = limpaNome(document.getElementById('senha')?.value);
-  return n && s ? `${n} (senha ${s})` : n || (s ? `Senha ${s}` : '');
-};
-// Pagamento sem nome: usa quem está fechando a conta; sem isso, "Pessoa N"
-const nomeSeguro = (p, i) => limpaNome(p.nome) || clienteTxt() || `Pessoa ${i + 1}`;
+const nomeSeguro = (p, i) => limpaNome(p.nome) || `Pessoa ${i + 1}`;
+// Quem pode fechar a conta: senha de 4 dígitos → nome. O código guarda só um resumo (hash) de cada senha, nunca a senha.
+// Isso evita fechar por engano; não é segurança forte (a página é aberta e 4 dígitos se descobrem testando).
+// Pessoa nova: gere o hash com hashSenha('NNNN') no console do navegador e acrescente aqui.
+const hashSenha = pin => { let h = 0x811c9dc5; for (const c of 'bookafe:' + pin) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); };
+const OPERADORES = { '885345d8': 'Pilar', 'f68d66b0': 'Kelly', 'c1ec2f0': 'Kleber' };
+const operadorDa = pin => /^\d{4}$/.test(pin) ? OPERADORES[hashSenha(pin)] || null : null;
 function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
   return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
 }
 // Cópia da comanda em CSV (abre no Excel): separador ";" e BOM para os acentos
-function csvComanda(data, comanda, totalCentavos, lista, partes) {
-  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Valor pago (R$)'],
-    ...lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])])];
+function csvComanda(data, comanda, totalCentavos, lista, partes, fechadoPor = '') {
+  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Valor pago (R$)', 'Fechado por'],
+    ...lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i]), fechadoPor])];
   return '﻿' + linhas.map(l => l.map(v => /[;"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(';')).join('\r\n') + '\r\n';
 }
 
@@ -369,7 +365,7 @@ async function* arquivosComanda(raiz) {
 
 // Cópia geral (diária ou semanal): todas as linhas de pagamento dos dias + o Resumo do caixa de cada dia
 function copiaGeral(dias, porDia) {
-  const linhas = ['Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)'], resumo = [];
+  const linhas = ['Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por'], resumo = [];
   for (const d of dias) {
     const textos = porDia.get(d) || [];
     for (const t of textos) linhas.push(...t.replace(/^﻿/, '').split(/\r?\n/).slice(1).filter(l => l.trim()));
@@ -542,11 +538,17 @@ function mostraValoresDia() {
     const c = lerValor(tipo, $('data').value || hojeISO());
     $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
   }
-  $('senha').value = proximaSenha($('data').value || hojeISO());
 }
-// Senha: cada comanda do dia recebe sozinha o próximo número (1, 2, 3…), guardado por data; dá para trocar à mão (só números)
-const proximaSenha = iso => String(lerValor('senha', iso) + 1);
-$('senha').addEventListener('input', () => { $('senha').value = $('senha').value.replace(/\D/g, ''); });
+// Senha de quem fecha a conta: só números; com 4 dígitos mostra o nome ou avisa que não existe
+const SENHA_DICA = 'Obrigatória para finalizar a comanda. Só quem tem senha cadastrada pode fechar a conta.';
+$('senha').addEventListener('input', () => {
+  const e = $('senha'); e.value = e.value.replace(/\D/g, '').slice(0, 4);
+  const op = operadorDa(e.value), errado = e.value.length === 4 && !op;
+  e.setAttribute('aria-invalid', errado ? 'true' : 'false');
+  $('senha-err').textContent = errado ? 'Senha não encontrada.' : '';
+  $('senha-hint').textContent = op ? `Fechando a conta: ${op}` : SENHA_DICA;
+});
+const limpaSenha = () => { $('senha').value = ''; $('senha').setAttribute('aria-invalid', 'false'); $('senha-err').textContent = ''; $('senha-hint').textContent = SENHA_DICA; };
 // Só atualiza os quadros Total e Fechamento do dia; a comanda aberta não muda
 for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
@@ -562,7 +564,7 @@ $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
 // Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas e pasta
 function novaComanda() {
-  pessoas = []; $('cliente').value = ''; $('senha').value = proximaSenha($('data').value || hojeISO()); $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
+  pessoas = []; limpaSenha(); $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
@@ -686,23 +688,28 @@ function calcularResultado() {
     ${situacao}
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
-    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso), cli = clienteTxt(), sen = $('senha').value.trim();
-    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes), iso);
+    // Só fecha a conta com a senha de 4 dígitos de quem tem cadastro
+    const op = operadorDa($('senha').value);
+    if (!op) {
+      $('senha').setAttribute('aria-invalid', 'true'); $('senha-err').textContent = 'Digite a senha de 4 dígitos de quem está fechando a conta.';
+      $('senha').scrollIntoView({ block: 'center' }); $('senha').focus(); return;
+    }
+    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
+    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes, op), iso);
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
     somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
-    if (/^\d+$/.test(sen)) gravarValor('senha', iso, Math.max(lerValor('senha', iso), +sen)); // a próxima comanda pega o número seguinte
     novaComanda();
-    avisar(`Comanda das ${hora}${cli ? ` (${cli})` : ''} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
+    avisar(`Comanda das ${hora} (fechada por ${op}) copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
   });
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
     const who = document.createElement('span'); who.className = 'who';
-    const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: clienteTxt() || `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
+    const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
     nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
     nome.addEventListener('input', () => { p.nome = nome.value; }); // nome opcional; vazio = "Pessoa N"
     who.append(nome);
@@ -950,7 +957,6 @@ $('res-copias').addEventListener('click', async () => {
 // Autoteste: abra a página com ?teste na URL.
 if (/[?&]teste\b/.test(location.search)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
-  const senhaDaTela = $('senha').value; $('senha').value = ''; // os testes de nome contam com a senha vazia; volta no fim
   const soma = a => a.reduce((x, y) => x + y, 0);
   let r = dividir(10000, 3);
   ok(r.total === 10000 && soma(r.partes) === 10000, 'R$100 entre 3 soma R$100,00');
@@ -986,8 +992,8 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(pg(10000, [6000, 6000]) === '6000,6000|falta 0|troco 2000', 'troco');
   ok(pg(10000, [12000, null]) === '12000,0|falta 0|troco 2000', 'pagou a mais: o sem valor fica com zero');
   ok(dataBR('2026-10-21') === '21/10/2026', 'data no formato dd/mm/aaaa');
-  ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000])
-     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00\r\n', 'cópia da comanda em CSV, nome seguro para o Excel');
+  ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000], 'Kelly')
+     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00;Kelly\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00;Kelly\r\n', 'cópia da comanda em CSV com quem fechou, nome seguro para o Excel');
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
   gravarValor('abertura', '1999-01-01', 15000); gravarValor('saidas', '1999-01-01', 4000);
@@ -1025,13 +1031,10 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(zm.quando === 'x' && lerMarco('mes-1999-01') === null && lerMarco('res-dia-1999-01-01') === null, 'zerar e voltar a contar o mês todo');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
-  $('cliente').value = ' =João ';
-  ok(linhasPlanilha('22/10/2026', '10:00', 5000, [{ nome: '', pag: 'pix' }, { nome: 'Bia', pag: '' }], [2500, 2500])
-     === '22/10/2026\t10:00\t50,00\tJoão\tPIX\t25,00\n22/10/2026\t10:00\t50,00\tBia\tSem forma\t25,00', 'nome do cliente entra nos pagamentos sem nome');
-  $('senha').value = '23'; const comSenha = clienteTxt(); $('cliente').value = ''; const soSenha = clienteTxt(); $('senha').value = '';
-  ok(comSenha === 'João (senha 23)' && soSenha === 'Senha 23' && clienteTxt() === '', 'cliente identificado por nome e/ou senha');
-  const s0 = proximaSenha('1999-04-04'); gravarValor('senha', '1999-04-04', 7); const s7 = proximaSenha('1999-04-04'); gravarValor('senha', '1999-04-04', 0);
-  ok(s0 === '1' && s7 === '8' && proximaSenha('1999-04-05') === '1', 'senha numerada por dia: começa em 1 e segue o último número usado');
+  // Senhas: o teste não guarda nenhuma senha de verdade, só confere as regras
+  ok(Object.values(OPERADORES).join() === 'Pilar,Kelly,Kleber' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'três pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
+  ok(operadorDa('') === null && operadorDa('123') === null && operadorDa('12345') === null && operadorDa('abcd') === null
+     && Array.from({ length: 10000 }, (_, n) => String(n).padStart(4, '0')).filter(operadorDa).length === 3, 'só 3 senhas de 4 dígitos abrem; o resto é recusado');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
@@ -1060,7 +1063,7 @@ if (/[?&]teste\b/.test(location.search)) {
       const nomes2 = []; for await (const [n] of arquivosComanda(raiz)) nomes2.push(n);
       ok(nomes.length === 2 && nomes2.length === 2, 'Resultados lê a raiz e Comandas\\(mês) sem repetir');
     } catch (e) { ok(false, 'pastas e cópias: ' + e.message); }
-    finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); $('senha').value = senhaDaTela; }
+    finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); }
     const falhas = log.filter(l => l.startsWith('FALHA')).length;
     const el = $('teste'); el.hidden = false;
     el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
