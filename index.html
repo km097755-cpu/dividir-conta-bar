@@ -167,6 +167,7 @@ ul.barras li.empty { display: block }
       <label for="res-dia">Dia <input type="date" id="res-dia" class="plain"></label>
       <label for="res-mes">Mês <input type="month" id="res-mes" class="plain"></label>
       <button type="button" class="btn-ghost" id="res-ler">Ler comandas da pasta</button>
+      <button type="button" class="btn-ghost" id="res-copias">Refazer cópias do mês</button>
       <p class="hint" id="res-fonte" aria-live="polite"></p>
     </div>
     <div class="res-grid" style="margin-top:24px">
@@ -215,7 +216,7 @@ ul.barras li.empty { display: block }
         <div class="field">
           <span class="field-title">Pasta das comandas</span>
           <button type="button" class="btn-ghost" id="escolher-pasta">Escolher pasta das comandas</button>
-          <div class="hint" id="pasta-hint">Cada comanda finalizada é salva como arquivo nesta pasta (ex.: E:\Bookafé). Sem pasta escolhida, o arquivo vai para Downloads.</div>
+          <div class="hint" id="pasta-hint">Cada comanda finalizada é salva em Comandas\(mês) dentro desta pasta, e o app atualiza sozinho a Cópia diária e a Cópia semanal, também separadas por mês (ex.: F:\Bookafé (Comandas)). Sem pasta escolhida, o arquivo vai para Downloads.</div>
         </div>
        </div>
       </form>
@@ -329,15 +330,63 @@ function guardaPasta(acao, valor) {
     } catch { res(null); }
   });
 }
-// Salva o arquivo na pasta escolhida; se não houver pasta ou permissão, baixa (Downloads). Devolve onde salvou.
-async function salvarCopia(nome, texto) {
+// Pastas dentro da pasta escolhida: Comandas\<mês>, Cópia diária\<mês> e Cópia semanal\<mês> (o mês é criado sozinho na 1ª comanda dele)
+const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const nomePastaMes = iso => `${iso.slice(0, 7)} ${MESES[+iso.slice(5, 7) - 1]}`;
+async function pastaDe(raiz, ...nomes) { let d = raiz; for (const n of nomes) d = await d.getDirectoryHandle(n, { create: true }); return d; }
+async function gravarArquivo(pasta, nome, texto) { const w = await (await pasta.getFileHandle(nome, { create: true })).createWritable(); await w.write(texto); await w.close(); }
+const somaDiasISO = (iso, n) => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + n); return isoDe(d); };
+const inicioSemana = iso => somaDiasISO(iso, -((new Date(iso + 'T12:00').getDay() + 6) % 7)); // segunda-feira
+
+// Comandas de uma pasta: a raiz (comandas antigas) e Comandas\<mês>\; o mesmo nome de arquivo só entra uma vez
+async function* arquivosComanda(raiz) {
+  const vistos = new Set();
+  async function* varre(dir, nivel) {
+    for await (const [nome, h] of dir.entries()) {
+      if (h.kind === 'file' && /^Comanda .*\.csv$/i.test(nome) && !vistos.has(nome)) { vistos.add(nome); yield [nome, h]; }
+      else if (h.kind === 'directory' && (nivel === 1 || nome === 'Comandas') && nivel < 2) yield* varre(h, nivel + 1);
+    }
+  }
+  yield* varre(raiz, 0);
+}
+
+// Cópia geral (diária ou semanal): todas as linhas de pagamento dos dias + o Resumo do caixa de cada dia
+function copiaGeral(dias, porDia) {
+  const linhas = ['Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$)'], resumo = [];
+  for (const d of dias) {
+    const textos = porDia.get(d) || [];
+    for (const t of textos) linhas.push(...t.replace(/^﻿/, '').split(/\r?\n/).slice(1).filter(l => l.trim()));
+    const v = diasDasComandas(textos.flatMap(t => comandasDoCsv(t) || [])).get(d) || { centavos: 0, comandas: 0, formas: {} };
+    const ab = lerValor('abertura', d), abs = lerValor('abastecimento', d), sa = lerValor('saidas', d), co = lerValor('coleta', d);
+    if (!v.comandas && !ab && !abs && !sa && !co) continue;
+    resumo.push([dataBR(d), ...[ab, abs, v.formas.pix || 0, v.formas.debito || 0, v.formas.credito || 0, v.formas.dinheiro || 0, v.centavos, sa, co, ab + abs + v.centavos - sa - co].map(reais), v.comandas]);
+  }
+  const cab = 'Data;Abertura;Abastecimento;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Fechamento do caixa;Comandas';
+  return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
+}
+async function lerComandasDaPasta(iso) {
+  const textos = [];
+  for await (const [nome, h] of arquivosComanda(pastaComandas)) if (nome.startsWith(`Comanda ${iso} `)) textos.push(await (await h.getFile()).text());
+  return textos;
+}
+// Refaz a cópia do dia e a da semana (segunda a domingo; fica na pasta do mês da segunda-feira)
+async function atualizarCopias(iso) {
+  const ini = inicioSemana(iso), dias = Array.from({ length: 7 }, (_, i) => somaDiasISO(ini, i)), porDia = new Map();
+  for (const d of dias) porDia.set(d, await lerComandasDaPasta(d));
+  await gravarArquivo(await pastaDe(pastaComandas, 'Cópia diária', nomePastaMes(iso)), `Dia ${iso}.csv`, copiaGeral([iso], porDia));
+  await gravarArquivo(await pastaDe(pastaComandas, 'Cópia semanal', nomePastaMes(ini)), `Semana ${ini} a ${dias[6]}.csv`, copiaGeral(dias, porDia));
+}
+
+// Salva a comanda em Comandas\<mês> da pasta escolhida e atualiza as cópias; sem pasta ou permissão, baixa (Downloads). Devolve onde salvou.
+async function salvarCopia(nome, texto, iso) {
   if (pastaComandas) {
     try {
       const opt = { mode: 'readwrite' };
       if (await pastaComandas.queryPermission(opt) !== 'granted' && await pastaComandas.requestPermission(opt) !== 'granted') throw new Error('sem permissão');
-      const w = await (await pastaComandas.getFileHandle(nome, { create: true })).createWritable();
-      await w.write(texto); await w.close();
-      return 'na pasta ' + pastaComandas.name;
+      await gravarArquivo(await pastaDe(pastaComandas, 'Comandas', nomePastaMes(iso)), nome, texto);
+      const onde = `na pasta ${pastaComandas.name}\\Comandas\\${nomePastaMes(iso)}`;
+      try { await atualizarCopias(iso); } catch { return onde + ' (as cópias diária e semanal não foram atualizadas)'; }
+      return onde + ' (cópias diária e semanal atualizadas)';
     } catch {}
   }
   const dl = await window.claude?.use?.('downloads').catch(() => null);
@@ -410,7 +459,7 @@ function avisar(msg, ms = 3000) {
 const $ = id => document.getElementById(id);
 let pessoas = [];
 $('data').value = hojeISO();
-const mostraPasta = () => { if (pastaComandas) $('pasta-hint').textContent = `Pasta escolhida: ${pastaComandas.name}. Cada comanda finalizada é salva nela.`; };
+const mostraPasta = () => { if (pastaComandas) $('pasta-hint').textContent = `Pasta escolhida: ${pastaComandas.name}. Cada comanda finalizada vai para Comandas\\(mês), com Cópia diária e Cópia semanal.`; };
 if ('showDirectoryPicker' in window) {
   guardaPasta('get').then(h => { if (h && !pastaComandas) { pastaComandas = h; mostraPasta(); } });
   $('escolher-pasta').addEventListener('click', async () => {
@@ -617,7 +666,7 @@ function calcularResultado() {
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
     const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
-    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes));
+    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes), iso);
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
@@ -734,8 +783,7 @@ async function carregarResultados(pedirPermissao) {
       if (perm !== 'granted' && pedirPermissao) perm = await pastaComandas.requestPermission(opt);
       if (perm === 'granted') {
         const lidas = []; let arquivos = 0, ignorados = 0;
-        for await (const [nome, h] of pastaComandas.entries()) {
-          if (h.kind !== 'file' || !/^Comanda .*\.csv$/i.test(nome)) continue;
+        for await (const [, h] of arquivosComanda(pastaComandas)) {
           arquivos++;
           const c = comandasDoCsv(await (await h.getFile()).text());
           if (c) lidas.push(...c); else ignorados++;
@@ -859,6 +907,23 @@ $('res-ler').addEventListener('click', () => {
   if (!pastaComandas) { avisar('Escolha antes a pasta das comandas na aba Comanda.'); abrirAba('comanda'); $('escolher-pasta').focus(); return; }
   carregarResultados(true);
 });
+// Refaz a Cópia diária e a semanal de todos os dias do mês escolhido que têm comanda na pasta (útil para dias antigos)
+async function refazerCopiasMes(mes) {
+  const dias = new Set();
+  for await (const [nome] of arquivosComanda(pastaComandas)) { const m = /^Comanda (\d{4}-\d{2}-\d{2}) /.exec(nome); if (m && m[1].startsWith(mes + '-')) dias.add(m[1]); }
+  for (const d of dias) await atualizarCopias(d);
+  return dias.size;
+}
+if (!('showDirectoryPicker' in window)) $('res-copias').hidden = true;
+$('res-copias').addEventListener('click', async () => {
+  if (!pastaComandas) { avisar('Escolha antes a pasta das comandas na aba Comanda.'); abrirAba('comanda'); $('escolher-pasta').focus(); return; }
+  const mes = $('res-mes').value || hojeISO().slice(0, 7);
+  try {
+    if (await pastaComandas.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('sem permissão');
+    const n = await refazerCopiasMes(mes);
+    $('res-fonte').textContent = n ? `Cópias de ${nomePastaMes(mes + '-01')} refeitas: ${n} dia${n === 1 ? '' : 's'} (Cópia diária e Cópia semanal).` : `Nenhuma comanda de ${nomePastaMes(mes + '-01')} na pasta.`;
+  } catch { $('res-fonte').textContent = 'Não foi possível refazer as cópias (permissão da pasta).'; }
+});
 
 // Autoteste: abra a página com ?teste na URL.
 if (/[?&]teste\b/.test(location.search)) {
@@ -937,9 +1002,39 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(zm.quando === 'x' && lerMarco('mes-1999-01') === null && lerMarco('res-dia-1999-01-01') === null, 'zerar e voltar a contar o mês todo');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
-  const falhas = log.filter(l => l.startsWith('FALHA')).length;
-  const el = $('teste'); el.hidden = false;
-  el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
-  console[falhas ? 'error' : 'log'](el.textContent);
+  ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
+  ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
+  // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
+  const pastaFalsa = nome => { const filhos = new Map(); return { kind: 'directory', name: nome, filhos,
+    async getDirectoryHandle(n, o = {}) { if (!filhos.has(n)) { if (!o.create) throw new Error('não existe'); filhos.set(n, pastaFalsa(n)); } return filhos.get(n); },
+    async getFileHandle(n, o = {}) { if (!filhos.has(n)) { if (!o.create) throw new Error('não existe'); let txt = ''; filhos.set(n, { kind: 'file', name: n,
+      async getFile() { return { text: async () => txt }; }, async createWritable() { let b = ''; return { write: async t => { b += t; }, close: async () => { txt = b; } }; } }); } return filhos.get(n); },
+    async *entries() { yield* filhos.entries(); } }; };
+  (async () => {
+    const guardada = pastaComandas, raiz = pastaFalsa('Teste');
+    pastaComandas = Object.assign(raiz, { queryPermission: async () => 'granted' });
+    try {
+      gravarValor('abertura', '1999-03-03', 10000); gravarValor('coleta', '1999-03-03', 2000);
+      await gravarArquivo(raiz, 'Comanda 1999-03-01 09-00-00.csv', csvComanda('01/03/1999', '09:00:00', 1000, [{ nome: '', pag: 'pix' }], [1000])); // comanda antiga, solta na raiz
+      const onde = await salvarCopia('Comanda 1999-03-03 10-00-00.csv', csvComanda('03/03/1999', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [6000]), '1999-03-03');
+      const ler = async (...c) => { let d = raiz; for (const n of c.slice(0, -1)) d = await d.getDirectoryHandle(n); return (await (await d.getFileHandle(c.at(-1))).getFile()).text(); };
+      const dia = await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-03.csv'), sem = await ler('Cópia semanal', '1999-03 Março', 'Semana 1999-03-01 a 1999-03-07.csv');
+      ok(onde.includes('Comandas\\1999-03 Março') && (await ler('Comandas', '1999-03 Março', 'Comanda 1999-03-03 10-00-00.csv')).includes('Ana'), 'comanda salva em Comandas\\(mês)');
+      ok(dia.includes('03/03/1999;10:00:00;50,00;Ana;Dinheiro;60,00') && !dia.includes('01/03/1999;09:00')
+         && dia.includes('03/03/1999;100,00;0,00;0,00;0,00;0,00;50,00;50,00;0,00;20,00;130,00;1'), 'cópia diária com as linhas e o resumo do caixa (troco descontado)');
+      ok(sem.includes('01/03/1999;09:00:00') && sem.includes('03/03/1999;10:00:00') && sem.split('Resumo do caixa')[1].trim().split('\r\n').length === 3, 'cópia semanal junta a comanda antiga da raiz e a nova');
+      await gravarArquivo(await pastaDe(raiz, 'Cópia diária', '1999-03 Março'), 'Dia 1999-03-01.csv', 'velho');
+      ok(await refazerCopiasMes('1999-03') === 2 && (await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-01.csv')).includes('01/03/1999;09:00:00'), 'refazer cópias do mês (dias antigos)');
+      const nomes = []; for await (const [n] of arquivosComanda(raiz)) nomes.push(n);
+      await gravarArquivo(raiz, 'Comanda 1999-03-03 10-00-00.csv', 'x'); // mesmo nome na raiz não conta duas vezes
+      const nomes2 = []; for await (const [n] of arquivosComanda(raiz)) nomes2.push(n);
+      ok(nomes.length === 2 && nomes2.length === 2, 'Resultados lê a raiz e Comandas\\(mês) sem repetir');
+    } catch (e) { ok(false, 'pastas e cópias: ' + e.message); }
+    finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); }
+    const falhas = log.filter(l => l.startsWith('FALHA')).length;
+    const el = $('teste'); el.hidden = false;
+    el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
+    console[falhas ? 'error' : 'log'](el.textContent);
+  })();
 }
 </script>
