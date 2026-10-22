@@ -209,6 +209,16 @@ ul.barras li.empty { display: block }
        <h2 id="h-conta">Conta</h2>
        <div class="panel">
         <div class="field">
+          <label for="cliente">Nome do cliente</label>
+          <input type="text" id="cliente" class="plain" autocomplete="off" maxlength="60" placeholder="Quem está fechando a conta" aria-describedby="cliente-hint">
+          <div class="hint" id="cliente-hint">Opcional. Entra na planilha e na cópia da comanda no lugar de "Pessoa 1", "Pessoa 2"… quando o pagamento não tiver nome. Limpa sozinho na comanda nova.</div>
+        </div>
+        <div class="field">
+          <label for="senha">Senha (número)</label>
+          <input type="text" id="senha" class="plain" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="Ex.: 23" aria-describedby="senha-hint">
+          <div class="hint" id="senha-hint">Opcional. Identifica a comanda pelo número, sozinho ("Senha 23") ou junto com o nome ("Carlos (senha 23)").</div>
+        </div>
+        <div class="field">
           <label for="total">Total da conta</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
           <div class="err" id="total-err"></div>
@@ -306,7 +316,14 @@ const dataBR = iso => iso.split('-').reverse().join('/');
 const horaAgora = () => new Date().toTimeString().slice(0, 8);
 const reais = c => (c / 100).toFixed(2).replace('.', ',');
 // Nome seguro para Excel: sem tabulação/quebra e sem =, +, -, @ no começo (o Excel trataria como fórmula)
-const nomeSeguro = (p, i) => p.nome.replace(/[\t\r\n]/g, ' ').trim().replace(/^[=+\-@]+/, '').trim() || `Pessoa ${i + 1}`;
+const limpaNome = s => String(s || '').replace(/[\t\r\n]/g, ' ').trim().replace(/^[=+\-@]+/, '').trim();
+// Quem está fechando a conta: nome e/ou senha (número) — "Carlos (senha 23)", "Carlos" ou "Senha 23"
+const clienteTxt = () => {
+  const n = limpaNome(document.getElementById('cliente')?.value), s = limpaNome(document.getElementById('senha')?.value);
+  return n && s ? `${n} (senha ${s})` : n || (s ? `Senha ${s}` : '');
+};
+// Pagamento sem nome: usa quem está fechando a conta; sem isso, "Pessoa N"
+const nomeSeguro = (p, i) => limpaNome(p.nome) || clienteTxt() || `Pessoa ${i + 1}`;
 function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
   return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
 }
@@ -541,7 +558,7 @@ $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
 // Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas e pasta
 function novaComanda() {
-  pessoas = []; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
+  pessoas = []; $('cliente').value = ''; $('senha').value = ''; $('total').value = ''; $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
@@ -665,7 +682,7 @@ function calcularResultado() {
     ${situacao}
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
-    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
+    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso), cli = clienteTxt();
     const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes), iso);
     const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
@@ -673,14 +690,14 @@ function calcularResultado() {
     const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
     somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
     novaComanda();
-    avisar(`Comanda das ${hora} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
+    avisar(`Comanda das ${hora}${cli ? ` (${cli})` : ''} copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
   });
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
     const who = document.createElement('span'); who.className = 'who';
-    const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
+    const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: clienteTxt() || `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
     nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
     nome.addEventListener('input', () => { p.nome = nome.value; }); // nome opcional; vazio = "Pessoa N"
     who.append(nome);
@@ -1002,6 +1019,11 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(zm.quando === 'x' && lerMarco('mes-1999-01') === null && lerMarco('res-dia-1999-01-01') === null, 'zerar e voltar a contar o mês todo');
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
+  $('cliente').value = ' =João ';
+  ok(linhasPlanilha('22/10/2026', '10:00', 5000, [{ nome: '', pag: 'pix' }, { nome: 'Bia', pag: '' }], [2500, 2500])
+     === '22/10/2026\t10:00\t50,00\tJoão\tPIX\t25,00\n22/10/2026\t10:00\t50,00\tBia\tSem forma\t25,00', 'nome do cliente entra nos pagamentos sem nome');
+  $('senha').value = '23'; const comSenha = clienteTxt(); $('cliente').value = ''; const soSenha = clienteTxt(); $('senha').value = '';
+  ok(comSenha === 'João (senha 23)' && soSenha === 'Senha 23' && clienteTxt() === '', 'cliente identificado por nome e/ou senha');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
