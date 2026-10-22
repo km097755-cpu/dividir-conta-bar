@@ -228,7 +228,7 @@ ul.barras li.empty { display: block }
           <label for="coleta">Coleta/Cofre</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="coleta" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="coleta-err coleta-hint"></div>
           <div class="err" id="coleta-err"></div>
-          <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. É descontado do fechamento do caixa, fica guardado para a data escolhida e não mexe nas comandas.</div>
+          <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. É descontado do fechamento do caixa e vira sozinho a abertura de caixa do dia seguinte. Não mexe nas comandas.</div>
         </div>
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
       </div>
@@ -443,7 +443,11 @@ for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
   $(tipo).setAttribute('aria-invalid', ruim ? 'true' : 'false');
   $(tipo + '-err').textContent = ruim ? (v === null ? 'Valor inválido. Use números com até 2 casas, ex.: 150,00.' : `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`) : '';
-  if (!ruim) { gravarValor(tipo, $('data').value || hojeISO(), v); renderTotais(); }
+  if (ruim) return;
+  const iso = $('data').value || hojeISO();
+  gravarValor(tipo, iso, v);
+  if (tipo === 'coleta') gravarValor('abertura', diaSeguinte(iso), v); // o que vai para o cofre abre o caixa no dia seguinte
+  renderTotais();
 });
 $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
@@ -517,7 +521,7 @@ function renderTotais() {
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (abertura + vendas)', caixa),
     linha('Fechamento do caixa', caixa - sa - co, 'geral dia destaque'));
-  $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral destaque'));
+  $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
   const rM = somaDias(diasM.map(([, d]) => d)), etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
