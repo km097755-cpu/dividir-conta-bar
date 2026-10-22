@@ -139,7 +139,7 @@ ul.barras li.empty { display: block }
 <div class="wrap">
   <header>
     <h1>Bookafé (Comanda)</h1>
-    <p>Digite a data, a abertura de caixa e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
+    <p>Digite a data, a abertura de caixa, as saídas e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
   </header>
 
   <nav class="abas" role="tablist" aria-label="Telas do app">
@@ -178,15 +178,15 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Dinheiro no caixa no começo do dia. Fica guardado para a data acima e não entra no total vendido.</div>
         </div>
         <div class="field">
-          <label for="total">Total da conta</label>
-          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
-          <div class="err" id="total-err"></div>
-        </div>
-        <div class="field">
           <label for="saidas">Saídas/Compras</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
           <div class="err" id="saidas-err"></div>
           <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Fica guardado para a data acima e é descontado do dinheiro no caixa.</div>
+        </div>
+        <div class="field">
+          <label for="total">Total da conta</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
+          <div class="err" id="total-err"></div>
         </div>
         <div class="field">
           <span class="field-title">Pasta das comandas</span>
