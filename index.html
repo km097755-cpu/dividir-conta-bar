@@ -734,19 +734,12 @@ function renderResultados() {
   $('h-res-dia').textContent = `Resultado do dia ${dataBR(dia)}`;
   $('h-res-mes').textContent = `Resultado de ${nomeMes}`;
   $('h-dias').textContent = `Mês de ${nomeMes}`;
-  // Todos os dias do mês (01 ao último), com R$ 0,00 nos dias sem comanda
-  const porDia = new Map(diasMes), todosDias = Array.from({ length: new Date(+ano, +mm, 0).getDate() }, (_, i) => {
-    const iso = `${mes}-${String(i + 1).padStart(2, '0')}`; return [iso, porDia.get(iso) || { centavos: 0, comandas: 0, formas: {} }];
-  });
-  const maior = Math.max(1, ...diasMes.map(([, d]) => d.centavos)), ul = $('dias-mes');
-  ul.replaceChildren(...todosDias.map(([iso, d]) => {
-    const sem = new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
-    const ks = [...Object.keys(PAGAMENTOS), ''].filter(k => d.formas[k]);
-    const segs = ks.map(k => [CLASSE_FORMA[k], d.formas[k] / maior * 100]);
-    const dica = `${dataBR(iso)} (${sem}): ${pct(d.centavos, rMes.centavos)} do mês · ${d.comandas} comanda${d.comandas === 1 ? '' : 's'}\n`
-      + ks.map(k => `${nomeForma(k)}: ${pct(d.formas[k], d.centavos)} (${fmt(d.formas[k])})`).join('\n');
-    return linha([`${dataBR(iso).slice(0, 5)} ${sem}`], d.centavos, segs, dica);
-  }));
+  // Uma linha só para o mês inteiro (De 01 à último dia): barra dividida pelas formas; a dica traz as formas e a escala dia a dia
+  const ultimo = String(new Date(+ano, +mm, 0).getDate()), ksMes = [...Object.keys(PAGAMENTOS), ''].filter(k => rMes.formas[k]);
+  $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rMes.centavos, ksMes.map(k => [CLASSE_FORMA[k], rMes.formas[k] / rMes.centavos * 100]),
+    `De 01 à ${ultimo}/${mm}: ${rMes.comandas} comanda${rMes.comandas === 1 ? '' : 's'} · ${fmt(rMes.centavos)}\n`
+      + ksMes.map(k => `${nomeForma(k)}: ${pct(rMes.formas[k], rMes.centavos)} (${fmt(rMes.formas[k])})`).join('\n')
+      + escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rMes.centavos)));
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque, nas duas abas (quadro Total e Resultados)
