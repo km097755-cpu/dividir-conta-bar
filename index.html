@@ -140,16 +140,6 @@ ul.barras li.empty { display: block }
 .f-pix { background: var(--c-pix) } .f-debito { background: var(--c-debito) } .f-credito { background: var(--c-credito) }
 .f-dinheiro { background: var(--c-dinheiro) } .f-sem { background: var(--c-sem) }
 .bolinha { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle }
-/* Gráfico de crescimento */
-.cresc { width: 100%; height: auto; display: block }
-.cresc .linha { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; pointer-events: none }
-.cresc .eixo { stroke: var(--line) } .cresc .grade { stroke: var(--line); stroke-dasharray: 4 4 }
-.cresc text { font-family: var(--f-num); font-size: 16px; fill: var(--muted) }
-.cresc .faixa { fill: transparent }
-.cresc .ponto { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5 }
-.cresc .etapa { cursor: default; outline: none }
-.cresc .etapa:hover .faixa, .cresc .etapa.ativa .faixa, .cresc .etapa:focus-visible .faixa { fill: var(--accent-soft); opacity: .45 }
-.cresc .etapa:hover .ponto, .cresc .etapa.ativa .ponto, .cresc .etapa:focus-visible .ponto { fill: var(--accent) }
 .dica { position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 32px)); background: var(--ink); color: var(--bg); padding: 8px 10px; border-radius: 8px; font-size: .9rem; line-height: 1.35; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); white-space: pre-line }
 </style>
 
@@ -175,12 +165,8 @@ ul.barras li.empty { display: block }
       <section class="panel" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul></section>
       <section class="panel" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul></section>
     </div>
-    <div class="res-grid" style="margin-top:24px">
-      <section class="panel" aria-labelledby="h-cresc-dia"><h2 id="h-cresc-dia">Crescimento do dia</h2><div id="cresc-dia"></div></section>
-      <section class="panel" aria-labelledby="h-cresc-mes"><h2 id="h-cresc-mes">Crescimento do mês</h2><div id="cresc-mes"></div></section>
-    </div>
     <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Dias do mês</h2><ul class="barras" id="dias-mes"></ul></section>
-    <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem, e em cada ponto do gráfico para ver as etapas do crescimento.</p>
+    <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
   </section>
   <div class="dica" id="dica" role="tooltip" hidden></div>
 
@@ -425,7 +411,7 @@ function somarDia(iso, porForma) {
   for (const [k, v] of Object.entries(porForma)) { formas[k] = (formas[k] || 0) + v; soma += v; }
   gravarDia(iso, { centavos: d.centavos + soma, comandas: d.comandas + 1, formas });
 }
-// Comandas finalizadas uma a uma (hora + valor por forma, troco já descontado), para o gráfico de crescimento do dia
+// Comandas finalizadas uma a uma (hora + valor por forma, troco já descontado), para a escala de crescimento do dia
 const memoriaComandas = {};
 const chaveComandas = iso => 'bookafe-comandas-dia-' + iso;
 function lerComandasDia(iso) {
@@ -530,7 +516,7 @@ function renderTotais() {
   $('fechamento').replaceChildren(
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (abertura + vendas)', caixa),
-    linha('Fechamento do caixa (dinheiro no caixa − saídas − coleta)', caixa - sa - co, 'geral dia destaque'));
+    linha('Fechamento do caixa', caixa - sa - co, 'geral dia destaque'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, caixa - sa - co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
   const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
@@ -758,36 +744,6 @@ function renderResultados() {
     return linha([`${dataBR(iso).slice(0, 5)} ${sem}`], d.centavos, segs, dica);
   }));
   if (!diasMes.length) ul.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Nenhuma comanda neste mês.' }));
-  // Crescimento: dia = uma etapa por comanda (ordem da hora); mês = uma etapa por dia
-  const formasTxt = fs => Object.entries(fs).map(([k, v]) => `${nomeForma(k)}: ${fmt(v)}`).join(' · ');
-  const etapasDia = cmdDia.map(c => ({ rotulo: c.hora, valor: Object.values(c.formas).reduce((a, b) => a + b, 0), detalhe: formasTxt(c.formas) }));
-  graficoCrescimento($('cresc-dia'), etapasDia, rDia.comandas ? 'Este dia não tem as comandas uma a uma (foram finalizadas antes desta versão). Leia a pasta das comandas para ver.' : 'Nenhuma comanda neste dia.');
-  graficoCrescimento($('cresc-mes'), diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), valor: d.centavos, detalhe: `${d.comandas} comanda${d.comandas === 1 ? '' : 's'} · ` + formasTxt(d.formas) })), 'Nenhuma comanda neste mês.');
-  $('h-cresc-dia').textContent = `Crescimento do dia ${dataBR(dia)}`;
-  $('h-cresc-mes').textContent = `Crescimento de ${nomeMes}`;
-}
-
-// Linha do valor acumulado. Cada etapa tem uma faixa vertical com a dica (etapa, quanto entrou, porcentagem e acumulado).
-const svgEl = (nome, attrs = {}) => { const e = document.createElementNS('http://www.w3.org/2000/svg', nome); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
-function graficoCrescimento(box, etapas, vazio) {
-  if (!etapas.length) return box.replaceChildren(Object.assign(document.createElement('p'), { className: 'empty', textContent: vazio }));
-  const W = 600, H = 240, L = 14, R = 14, T = 34, B = 34, n = etapas.length;
-  let soma = 0; const acum = etapas.map(e => (soma += e.valor));
-  const max = Math.max(1, soma); // valores nunca negativos: o último ponto é o maior
-  const x = i => n === 1 ? W / 2 : L + i * (W - L - R) / (n - 1), y = v => T + (H - T - B) * (1 - v / max), meia = n === 1 ? W : (W - L - R) / (n - 1) / 2;
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'cresc', role: 'img', 'aria-label': `Crescimento em ${n} etapa${n === 1 ? '' : 's'} até ${fmt(soma)}` });
-  const texto = (t, a) => { const e = svgEl('text', a); e.textContent = t; return e; };
-  svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(max), y2: y(max), class: 'grade' }), svgEl('line', { x1: L, x2: W - R, y1: y(0), y2: y(0), class: 'eixo' }),
-    texto(fmt(max), { x: L, y: T - 12 }), texto(etapas[0].rotulo, { x: L, y: H - 8 }), texto(etapas[n - 1].rotulo, { x: W - R, y: H - 8, 'text-anchor': 'end' }),
-    svgEl('polyline', { points: acum.map((v, i) => `${x(i)},${y(v)}`).join(' '), class: 'linha' }));
-  acum.forEach((v, i) => {
-    const g = svgEl('g', { class: 'etapa', tabindex: 0 }), x0 = i === 0 ? 0 : x(i) - meia, x1 = i === n - 1 ? W : x(i) + meia;
-    g.dataset.dica = `Etapa ${i + 1} de ${n} · ${etapas[i].rotulo}\nEntrou ${fmt(etapas[i].valor)} (${pct(etapas[i].valor, soma)} do total)\nAcumulado: ${fmt(v)} (${pct(v, soma)})`
-      + (etapas[i].detalhe ? '\n' + etapas[i].detalhe : '');
-    g.append(svgEl('rect', { x: x0, y: 0, width: x1 - x0, height: H, class: 'faixa' }), svgEl('circle', { cx: x(i), cy: y(v), r: 5, class: 'ponto' }));
-    svg.append(g);
-  });
-  box.replaceChildren(svg);
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque, nas duas abas (quadro Total e Resultados)
@@ -799,8 +755,8 @@ function graficoCrescimento(box, etapas, vazio) {
     dica.style.left = Math.max(8, Math.min(x + 14, innerWidth - r.width - 8)) + 'px';
     dica.style.top = Math.max(8, (y + 18 + r.height > innerHeight) ? y - r.height - 12 : y + 18) + 'px';
   };
-  // Linhas das tabelas (li) e etapas do gráfico (g): no gráfico a dica abre junto do ponto
-  const perto = li => { const p = li.querySelector('.ponto'); if (p) { const r = p.getBoundingClientRect(); return [r.left, r.bottom]; } const r = li.getBoundingClientRect(); return [r.left + 8, r.bottom - 10]; };
+  // Toque e teclado: a dica abre logo abaixo da linha
+  const perto = li => { const r = li.getBoundingClientRect(); return [r.left + 8, r.bottom - 10]; };
   const esconde = () => { dica.hidden = true; tela.querySelectorAll('.ativa').forEach(l => l.classList.remove('ativa')); };
   tela.addEventListener('pointermove', e => { const li = e.target.closest('[data-dica]'); if (li && e.pointerType === 'mouse') mostra(li, e.clientX, e.clientY); });
   tela.addEventListener('pointerout', e => { if (e.pointerType === 'mouse' && e.target.closest('[data-dica]') && !e.relatedTarget?.closest?.('[data-dica]')) esconde(); });
@@ -904,11 +860,6 @@ if (/[?&]teste\b/.test(location.search)) {
   zerarDia('1999-01-01'); guardarComanda('1999-01-01', { hora: '10:00:00', formas: { pix: 1000 } }); guardarComanda('1999-01-01', { hora: '11:00:00', formas: { dinheiro: 500 } });
   const c99 = lerComandasDia('1999-01-01'); zerarDia('1999-01-01');
   ok(c99.length === 2 && c99[1].formas.dinheiro === 500 && lerComandasDia('1999-01-01').length === 0, 'comandas do dia guardadas uma a uma e zeradas com o dia');
-  const gbox = document.createElement('div');
-  graficoCrescimento(gbox, [{ rotulo: '10:00', valor: 1000 }, { rotulo: '11:00', valor: 3000, detalhe: 'PIX: x' }], '');
-  const gd = [...gbox.querySelectorAll('.etapa')].map(g => g.dataset.dica);
-  ok(gd.length === 2 && gd[1].startsWith('Etapa 2 de 2 · 11:00') && gd[1].includes(`Acumulado: ${fmt(4000)} (100,0%)`) && gd[0].includes('(25,0% do total)'), 'gráfico de crescimento: uma etapa por comanda, com acumulado');
-  graficoCrescimento(gbox, [], 'vazio'); ok(gbox.textContent === 'vazio', 'gráfico sem etapas mostra aviso');
   const esc = escalaCrescimento([{ rotulo: '10:00', formas: { pix: 1000 } }, { rotulo: '11:00', formas: { dinheiro: 500 } }, { rotulo: '12:00', formas: { pix: 2000, dinheiro: 100 } }], 'pix', 3000);
   ok(esc === `\nEscala de crescimento:\n10:00  +${fmt(1000)} (+33,3%)  → ${fmt(1000)} = 33,3%\n12:00  +${fmt(2000)} (+66,7%)  → ${fmt(3000)} = 100,0%`
      && escalaCrescimento([{ rotulo: 'a', formas: { pix: 1 } }, { rotulo: 'b', formas: { debito: 2 } }], null, 3).endsWith(`→ ${fmt(3)} = 100,0%`)
