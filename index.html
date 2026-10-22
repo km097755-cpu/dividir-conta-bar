@@ -185,6 +185,17 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Dinheiro no caixa no começo do dia. Fica guardado para a data acima e não entra no total vendido.</div>
         </div>
         <div class="field">
+          <label for="abastecimento">Abastecimento de caixa</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abastecimento" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abastecimento-err abastecimento-hint"></div>
+          <div class="err" id="abastecimento-err"></div>
+          <div class="hint" id="abastecimento-hint">Dinheiro colocado no caixa durante o dia (reforço de troco). Fica guardado para a data acima e não entra no total vendido.</div>
+        </div>
+        <div class="field">
+          <label for="total-caixa">Valor total do caixa</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total-caixa" readonly aria-describedby="total-caixa-hint"></div>
+          <div class="hint" id="total-caixa-hint">Abertura + abastecimento (calculado sozinho).</div>
+        </div>
+        <div class="field">
           <label for="total">Total da conta</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
           <div class="err" id="total-err"></div>
@@ -424,7 +435,7 @@ function guardarComanda(iso, c) {
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
 // Abertura de caixa, Saídas/Compras e Coleta/Cofre: valores do dia, guardados por data (separados do total vendido)
-const VALORES_DIA = ['abertura', 'saidas', 'coleta'];
+const VALORES_DIA = ['abertura', 'abastecimento', 'saidas', 'coleta'];
 const memoriaValor = {};
 const chaveValor = (tipo, iso) => `bookafe-${tipo}-${iso}`;
 function lerValor(tipo, iso) {
@@ -502,7 +513,8 @@ function renderTotais() {
     d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: fmt(b) }));
     return d;
   };
-  const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerValor('abertura', iso), sa = lerValor('saidas', iso);
+  const iso = $('data').value || hojeISO(), dia = lerDia(iso), f = dia.formas || {}, ab = lerValor('abertura', iso), abs = lerValor('abastecimento', iso), sa = lerValor('saidas', iso);
+  $('total-caixa').value = reais(ab + abs); // Valor total do caixa = abertura + abastecimento
   // Linha de cada forma: barra na cor da forma + % do total do dia; a dica mostra a escala de crescimento comanda a comanda
   const cmds = [...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1).map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas }));
   const linhaForma = (k, nome, v = f[k] || 0) => linhaFormaPct(k, nome, v, dia.centavos,
@@ -510,16 +522,17 @@ function renderTotais() {
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
     linha('Abertura de caixa', ab),
+    linha('Abastecimento de caixa', abs),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
     Object.assign(linha('Total do dia', dia.centavos, 'geral dia destaque'), { tabIndex: 0 }));
   box.lastChild.dataset.dica = `Total do dia: ${fmt(dia.centavos)}` + escalaCrescimento(cmds, null, dia.centavos);
   box.append(Object.assign(document.createElement('p'), { className: 'hint', textContent: 'Passe o mouse (ou toque) em cada linha para ver a escala de crescimento.' }));
   // Fechamento do dia: só aqui as saídas/compras e a coleta são descontadas
-  const co = lerValor('coleta', iso), caixa = ab + dia.centavos;
+  const co = lerValor('coleta', iso), caixa = ab + abs + dia.centavos;
   $('fechamento').replaceChildren(
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
-    linha('Dinheiro no caixa (abertura + vendas)', caixa),
+    linha('Dinheiro no caixa (total do caixa + vendas)', caixa),
     linha('Fechamento do caixa', caixa - sa - co, 'geral dia destaque'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
   // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
