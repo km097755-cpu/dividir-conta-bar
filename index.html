@@ -736,8 +736,10 @@ function renderResultados() {
   $('h-dias').textContent = `Mês de ${nomeMes}`;
   // Uma linha só para o mês inteiro (De 01 à último dia): barra dividida pelas formas; a dica traz as formas e a escala dia a dia
   const ultimo = String(new Date(+ano, +mm, 0).getDate()), ksMes = [...Object.keys(PAGAMENTOS), ''].filter(k => rMes.formas[k]);
-  $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rMes.centavos, ksMes.map(k => [CLASSE_FORMA[k], rMes.formas[k] / rMes.centavos * 100]),
-    `De 01 à ${ultimo}/${mm}: ${rMes.comandas} comanda${rMes.comandas === 1 ? '' : 's'} · ${fmt(rMes.centavos)}\n`
+  // A barra enche com os dias que já passaram: mês atual = hoje ÷ último dia; mês passado = cheia; mês futuro = vazia
+  const hoje = hojeISO(), fracao = mes < hoje.slice(0, 7) ? 1 : mes > hoje.slice(0, 7) ? 0 : +hoje.slice(8) / +ultimo;
+  $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rMes.centavos, ksMes.map(k => [CLASSE_FORMA[k], rMes.formas[k] / rMes.centavos * fracao * 100]),
+    `De 01 à ${ultimo}/${mm}: dia ${Math.round(fracao * ultimo)} de ${ultimo} (${pct(fracao, 1)} do mês) · ${rMes.comandas} comanda${rMes.comandas === 1 ? '' : 's'} · ${fmt(rMes.centavos)}\n`
       + ksMes.map(k => `${nomeForma(k)}: ${pct(rMes.formas[k], rMes.centavos)} (${fmt(rMes.formas[k])})`).join('\n')
       + escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rMes.centavos)));
 }
