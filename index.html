@@ -262,6 +262,8 @@ ul.barras li.empty { display: block }
           <div class="hint" id="coleta-hint">Dinheiro tirado do caixa e levado para o cofre. É descontado do fechamento do caixa e vira sozinho a abertura de caixa do dia seguinte. Não mexe nas comandas.</div>
         </div>
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
+        <div class="acoes" id="acoes-fechamento"></div>
+        <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads).</p>
       </div>
       <h2 id="h-mes-pct">Porcentagem do mês</h2>
       <div class="panel totais" id="mes-pct" aria-labelledby="h-mes-pct" aria-live="polite"></div>
@@ -402,6 +404,39 @@ async function salvarCopia(nome, texto, iso) {
       return onde + ' (cópias diária e semanal atualizadas)';
     } catch {}
   }
+  return baixarArquivo(nome, texto);
+}
+// Finalizar o dia: o fechamento completo (caixa, vendas por forma, cada comanda e, com a pasta, os pagamentos) num arquivo só
+async function fechamentoDoDia(iso, comPasta) {
+  const dia = lerDia(iso), f = dia.formas || {}, v = t => lerValor(t, iso);
+  const ab = v('abertura'), sup = v('abastecimento'), sa = v('saidas'), co = v('coleta'), caixa = ab + sup + dia.centavos;
+  const linhas = [['Fechamento do dia', dataBR(iso)], ['Finalizado em', agoraTxt()], [],
+    ['Caixa', 'Valor (R$)'], ['Abertura de caixa', reais(ab)], ['Suprimento de caixa', reais(sup)], ['Valor total do caixa', reais(ab + sup)],
+    ...Object.entries(PAGAMENTOS).map(([k, n]) => ['Vendas em ' + n, reais(f[k] || 0)]), ...(f[''] ? [['Vendas sem forma de pagamento', reais(f[''])]] : []),
+    ['Resultado do dia (Vendas)', reais(dia.centavos)], ['Dinheiro no caixa', reais(caixa)], ['Saídas/Compras', reais(sa)], ['Coleta/Cofre', reais(co)],
+    ['Fechamento do caixa', reais(caixa - sa - co)], [`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, reais(co)], ['Comandas finalizadas', String(dia.comandas)], [],
+    ['Comandas do dia (hora)', ...Object.values(PAGAMENTOS), 'Total'],
+    ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
+      .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))])];
+  let texto = linhas.map(l => l.join(';')).join('\r\n');
+  if (comPasta) { const t = await lerComandasDaPasta(iso); if (t.length) texto += '\r\n\r\nPagamentos de cada comanda\r\n' + copiaGeral([iso], new Map([[iso, t]])).replace(/^﻿/, ''); }
+  return '﻿' + texto + '\r\n';
+}
+// Grava em Fechamento do dia\<mês>\Fechamento AAAA-MM-DD HH-MM-SS.csv (cada finalização fica guardada); sem pasta, baixa
+async function salvarFechamento(iso) {
+  const nome = `Fechamento ${iso} ${horaAgora().replace(/:/g, '-')}.csv`;
+  if (pastaComandas) {
+    try {
+      const opt = { mode: 'readwrite' };
+      if (await pastaComandas.queryPermission(opt) !== 'granted' && await pastaComandas.requestPermission(opt) !== 'granted') throw new Error('sem permissão');
+      await gravarArquivo(await pastaDe(pastaComandas, 'Fechamento do dia', nomePastaMes(iso)), nome, await fechamentoDoDia(iso, true));
+      return `na pasta ${pastaComandas.name}\\Fechamento do dia\\${nomePastaMes(iso)}`;
+    } catch {}
+  }
+  return baixarArquivo(nome, await fechamentoDoDia(iso, false));
+}
+// Sem pasta escolhida: baixa o arquivo (no artifact usa a capacidade downloads; no Chrome vai para Downloads)
+async function baixarArquivo(nome, texto) {
   const dl = await window.claude?.use?.('downloads').catch(() => null);
   if (dl) { try { await dl.save({ filename: nome, data: texto }); return 'pelo download'; } catch { return ''; } }
   const a = document.createElement('a');
@@ -666,6 +701,11 @@ function botaoConfirma(texto, acao) {
   });
   return b;
 }
+// Botão "Finalizar o dia" (dois toques), no quadro Fechamento do dia
+$('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', async () => {
+  const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
+  $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`;
+}), { className: 'btn' }));
 
 function calcular() { calcularResultado(); renderTotais(); }
 
@@ -1056,6 +1096,11 @@ if (/[?&]teste\b/.test(location.search)) {
       ok(dia.includes('03/03/1999;10:00:00;50,00;Ana;Dinheiro;60,00') && !dia.includes('01/03/1999;09:00')
          && dia.includes('03/03/1999;100,00;0,00;0,00;0,00;0,00;50,00;50,00;0,00;20,00;130,00;1'), 'cópia diária com as linhas e o resumo do caixa (troco descontado)');
       ok(sem.includes('01/03/1999;09:00:00') && sem.includes('03/03/1999;10:00:00') && sem.split('Resumo do caixa')[1].trim().split('\r\n').length === 3, 'cópia semanal junta a comanda antiga da raiz e a nova');
+      const ondeF = await salvarFechamento('1999-03-03'), pastaF = await raiz.getDirectoryHandle('Fechamento do dia').then(d => d.getDirectoryHandle('1999-03 Março'));
+      const arqF = []; for await (const [n, h] of pastaF.entries()) arqF.push([n, await (await h.getFile()).text()]);
+      ok(ondeF.includes('Fechamento do dia\\1999-03 Março') && arqF.length === 1 && /^Fechamento 1999-03-03 \d\d-\d\d-\d\d\.csv$/.test(arqF[0][0])
+         && arqF[0][1].includes('Abertura de caixa;100,00') && arqF[0][1].includes('Coleta/Cofre;20,00') && arqF[0][1].includes('Pagamentos de cada comanda') && arqF[0][1].includes(';Ana;Dinheiro;60,00'),
+         'finalizar o dia grava o fechamento completo em Fechamento do dia\\(mês)');
       await gravarArquivo(await pastaDe(raiz, 'Cópia diária', '1999-03 Março'), 'Dia 1999-03-01.csv', 'velho');
       ok(await refazerCopiasMes('1999-03') === 2 && (await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-01.csv')).includes('01/03/1999;09:00:00'), 'refazer cópias do mês (dias antigos)');
       const nomes = []; for await (const [n] of arquivosComanda(raiz)) nomes.push(n);
