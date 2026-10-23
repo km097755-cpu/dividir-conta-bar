@@ -684,8 +684,6 @@ function renderTotais() {
     `${nome}: ${pct(v, dia.centavos)} do total do dia\n${fmt(v)} de ${fmt(dia.centavos)}` + escalaCrescimento(cmds, k, v));
   box.replaceChildren(
     Object.assign(document.createElement('p'), { className: 'label realce', textContent: `Dia ${dataBR(iso)} · ${dia.comandas} comanda${dia.comandas === 1 ? '' : 's'} finalizada${dia.comandas === 1 ? '' : 's'}` }),
-    linha('Abertura de caixa', ab, 'destaque'),
-    linha('Suprimento de caixa', abs, 'destaque'),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => linhaForma(k, 'Total do dia em ' + nome)),
     ...(f[''] ? [linhaForma('', 'Total do dia sem forma de pagamento')] : []),
     Object.assign(linha('Total do dia', dia.centavos, 'geral dia destaque'), { tabIndex: 0 }));
