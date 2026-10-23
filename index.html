@@ -571,6 +571,14 @@ function lerMarco(c) {
 }
 function gravarMarco(c, v) { memoriaMarco[c] = v; try { v ? localStorage.setItem(chaveMarco(c), JSON.stringify(v)) : localStorage.removeItem(chaveMarco(c)); } catch {} }
 const agoraTxt = () => `${dataBR(hojeISO())} ${horaAgora().slice(0, 5)}`;
+// Marco "dd/mm/aaaa hh:mm" → "aaaa-mm-dd hh:mm" (para comparar com as comandas); sem marco, ''
+const marcoDesde = z => { const m = z && /(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2})/.exec(z.quando); return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : ''; };
+// Quantas comandas usaram cada forma; [[dia, comandas]]; comanda paga em duas formas conta nas duas; com "desde", só as de depois
+function contarPorForma(dias, desde = '') {
+  const qtd = {};
+  for (const [d, l] of dias) for (const c of l) if (!desde || `${d} ${c.hora.slice(0, 5)}` >= desde) for (const k of Object.keys(c.formas)) qtd[k] = (qtd[k] || 0) + 1;
+  return qtd;
+}
 function descontarZero(r, z) {
   const formas = {}; let centavos = 0;
   for (const [k, v] of Object.entries(r.formas)) { const x = Math.max(0, v - (z.formas[k] || 0)); if (x) { formas[k] = x; centavos += x; } }
@@ -948,12 +956,13 @@ function renderResultados() {
     li.append(nome, trilho, Object.assign(document.createElement('span'), { className: 'val', textContent: fmt(valor) }), Object.assign(document.createElement('span'), { className: 'sr', textContent: ' — ' + dica }));
     return li;
   };
-  const formas = (box, r, quando, etapas) => {
+  const formas = (box, r, quando, etapas, qtd = {}) => {
     const ks = [...Object.keys(PAGAMENTOS), ...(r.formas[''] ? [''] : [])];
     box.replaceChildren(...ks.map(k => {
       const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
-      return linha([bol, nomeForma(k)], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
-        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'));
+      const n = qtd[k] || 0;
+      return linha([bol, `${nomeForma(k)} · ${n}`], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}\n${n} comanda${n === 1 ? '' : 's'} paga${n === 1 ? '' : 's'} com ${nomeForma(k)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'));
     }));
     if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
   };
@@ -961,8 +970,11 @@ function renderResultados() {
   // Zerar o quadro (sem apagar nada): com marco, mostra só o que entrou depois de zerar
   const zDia = lerMarco('res-dia-' + dia), zMes = lerMarco('res-mes-' + mes);
   const vDia = zDia ? descontarZero(rDia, zDia) : rDia, vMes = zMes ? descontarZero(rMes, zMes) : rMes;
-  cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', zDia ? null : cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })));
-  cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', zMes ? null : diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })));
+  // Quantas comandas usaram cada forma (da pasta ou do navegador); com o quadro zerado, só as de depois de zerar
+  const listaDe = iso => etapasRes.get(iso) || lerComandasDia(iso);
+  const qDia = contarPorForma([[dia, cmdDia]], marcoDesde(zDia)), qMes = contarPorForma(diasMes.map(([iso]) => [iso, listaDe(iso)]), marcoDesde(zMes));
+  cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', zDia ? null : cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })), qDia);
+  cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', zMes ? null : diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), qMes);
   const acoes = (box, chave, r, z, oque) => box.replaceChildren(
     ...(z ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: `Zerado em ${z.quando}${z.por ? ` por ${z.por}` : ''}: mostrando só o que entrou depois.` })] : []),
     ...(r.comandas ? [botaoSupervisor(`Zerar ${oque}`, op => { gravarMarco(chave, { ...r, quando: agoraTxt(), por: op }); renderResultados(); })] : []),
@@ -1142,6 +1154,9 @@ if (/[?&]teste\b/.test(location.search)) {
   tenta('9999'); const m1 = bz.querySelector('small').textContent; tenta('0001'); const m2 = bz.querySelector('small').textContent; tenta('0000');
   delete OPERADORES[hashSenha('0000')]; delete OPERADORES[hashSenha('0001')];
   ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input'), 'zerar só libera com a senha da Pilar ou da Solange');
+  const qf = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1, dinheiro: 2 } }, { hora: '11:00:00', formas: { pix: 3 } }]]]);
+  const qz = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1 } }, { hora: '11:00:00', formas: { pix: 3 } }]]], marcoDesde({ quando: '07/07/1999 10:00' }));
+  ok(qf.pix === 2 && qf.dinheiro === 1 && !qf.debito && qz.pix === 1, 'quantidade de comandas por forma, e só depois de zerar');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
