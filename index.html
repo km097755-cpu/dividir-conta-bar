@@ -192,9 +192,9 @@ ul.barras li.empty { display: block }
             <input type="text" id="mov-motivo" class="plain" maxlength="120" autocomplete="off" placeholder="Ex.: troco para o caixa, pagamento do gás">
           </div>
           <div class="field">
-            <label for="mov-senha">Senha de quem está lançando (4 dígitos)</label>
-            <input type="password" id="mov-senha" class="plain" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" aria-describedby="mov-senha-hint">
-            <div class="hint" id="mov-senha-hint">Só colaboradores com senha cadastrada podem lançar.</div>
+            <label for="mov-senha">S ou R + senha de quem está lançando</label>
+            <input type="password" id="mov-senha" class="plain" maxlength="5" autocomplete="off" placeholder="S•••• ou R••••" aria-describedby="mov-senha-hint">
+            <div class="hint" id="mov-senha-hint">Digite <strong>S</strong> para Suprimento ou <strong>R</strong> para Retirada e logo depois a senha de 4 dígitos (ex.: S e a senha). Só colaboradores com senha cadastrada podem lançar.</div>
           </div>
           <div class="err" id="mov-err" role="alert"></div>
           <div class="check" id="mov-ok" role="status"></div>
@@ -1094,7 +1094,7 @@ function renderMovs() {
   const sup = l.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = l.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
   $('mov-lista').replaceChildren(
     ...(l.length ? l.map(m => {
-      const d = document.createElement('div'), esq = span(`${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
+      const d = document.createElement('div'), esq = span(`${m.tipo === 'sup' ? 'S' : 'R'} · ${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
       esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }));
       d.append(esq, span((m.tipo === 'sup' ? '+ ' : '− ') + fmt(m.valor))); return d;
     }) : [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Nenhum lançamento neste dia.' })]),
@@ -1102,13 +1102,21 @@ function renderMovs() {
     linhaM('Saldo (vai para o caixa)', fmt(sup - ret), 'geral dia destaque'));
 }
 $('ir-movs').addEventListener('click', () => { abrirAba('movs'); $('mov-valor').focus(); });
-$('mov-senha').addEventListener('input', () => { $('mov-senha').value = $('mov-senha').value.replace(/\D/g, '').slice(0, 4); });
+// S ou R antes da senha escolhe o tipo (S = Suprimento, R = Retirada); depois só os 4 números da senha
+const letraESenha = txt => { const t = String(txt).toUpperCase(), m = /^([SR]?)/.exec(t); return { letra: m[1], pin: t.slice(m[1].length).replace(/\D/g, '').slice(0, 4) }; };
+$('mov-senha').addEventListener('input', () => {
+  const { letra, pin } = letraESenha($('mov-senha').value);
+  $('mov-senha').value = letra + pin;
+  if (letra) document.querySelector(`input[name="mov-tipo"][value="${letra === 'S' ? 'sup' : 'ret'}"]`).checked = true;
+});
 $('form-mov').addEventListener('submit', e => {
   e.preventDefault();
-  const iso = $('data').value || hojeISO(), tipo = document.querySelector('input[name="mov-tipo"]:checked').value;
-  const v = parseValor($('mov-valor').value.trim()), motivo = limpaNome($('mov-motivo').value), op = operadorDa($('mov-senha').value);
+  const { letra, pin } = letraESenha($('mov-senha').value), iso = $('data').value || hojeISO();
+  const tipo = letra ? (letra === 'S' ? 'sup' : 'ret') : document.querySelector('input[name="mov-tipo"]:checked').value;
+  const v = parseValor($('mov-valor').value.trim()), motivo = limpaNome($('mov-motivo').value), op = operadorDa(pin);
   const erro = !v ? 'Digite o valor (maior que zero).' : v > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`
-    : !motivo ? 'Escreva o motivo.' : !op ? 'Senha errada: só colaboradores com senha cadastrada podem lançar.' : '';
+    : !motivo ? 'Escreva o motivo.' : !letra ? 'Digite S (suprimento) ou R (retirada) antes da senha.'
+    : !op ? 'Senha errada: só colaboradores com senha cadastrada podem lançar.' : '';
   $('mov-err').textContent = erro; $('mov-ok').textContent = '';
   if (erro) return;
   gravarMovs(iso, [...lerMovs(iso), { hora: horaAgora(), tipo, valor: v, motivo, por: op }]);
@@ -1258,11 +1266,13 @@ if (/[?&]teste\b/.test(location.search)) {
     gravarMovs('1999-05-05', []); gravarValor('abastecimento', '1999-05-05', 0);
     OPERADORES[hashSenha('0002')] = 'Kelly'; const dataTela = $('data').value; $('data').value = '1999-05-06';
     const tentaMov = (valor, motivo, pin) => { $('mov-valor').value = valor; $('mov-motivo').value = motivo; $('mov-senha').value = pin; $('form-mov').requestSubmit(); return $('mov-err').textContent; };
-    const e1 = tentaMov('10,00', 'troco', '9999'), e2 = tentaMov('10,00', '', '0002'), e3 = tentaMov('10,00', 'troco', '0002'), l6 = lerMovs('1999-05-06');
+    const e0 = tentaMov('10,00', 'troco', '0002'), e1 = tentaMov('10,00', 'troco', 'S9999'), e2 = tentaMov('10,00', '', 'S0002'), e3 = tentaMov('10,00', 'troco', 'S0002');
+    const e4 = tentaMov('2,00', 'troco', 'r0002'), l6 = lerMovs('1999-05-06');
     delete OPERADORES[hashSenha('0002')]; gravarMovs('1999-05-06', []); $('data').value = dataTela; mostraValoresDia(); renderTotais();
     ok(legado.length === 1 && legado[0].valor === 30000 && saldo === 25000 && arqMov.includes('Retirada;10:00:00;-50,00;gás;Kelly')
-       && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && l6.length === 1 && l6[0].por === 'Kelly' && l6[0].valor === 1000,
-       'suprimento/retirada: só com senha e motivo; saldo vai para o caixa e entra no fechamento do dia');
+       && e0.startsWith('Digite S') && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && e4 === ''
+       && l6.length === 2 && l6[0].por === 'Kelly' && l6[0].tipo === 'sup' && l6[0].valor === 1000 && l6[1].tipo === 'ret' && l6[1].valor === 200,
+       'suprimento/retirada: S ou R + senha e motivo; saldo vai para o caixa e entra no fechamento do dia');
     const guardada = pastaComandas, raiz = pastaFalsa('Teste');
     pastaComandas = Object.assign(raiz, { queryPermission: async () => 'granted' });
     try {
