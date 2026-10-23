@@ -698,7 +698,7 @@ function renderTotais() {
     for (const c of l) for (const k of Object.keys(c.formas)) qtd[k] = (qtd[k] || 0) + 1;
   }
   const nCom = n => `${n} comanda${n === 1 ? '' : 's'}`;
-  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, `${nome} · ${nCom(qtd[k] || 0)}`, v, rM.centavos,
+  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, `${nome} · ${qtd[k] || 0}`, v, rM.centavos,
     `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}\n${nCom(qtd[k] || 0)} pagas com ${nome}`
     + (semLista ? `\n(${nCom(semLista)} antigas sem o detalhe por forma)` : '') + escMes(k, v));
   $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
