@@ -274,8 +274,6 @@ ul.barras li.empty { display: block }
           <div class="hint" id="pasta-fech-hint">Nenhuma pasta escolhida: o fechamento vai para Downloads. Ex.: F:\Bookafé (Comandas).</div>
         </div>
       </div>
-      <h2 id="h-mes-pct">Porcentagem do mês</h2>
-      <div class="panel totais" id="mes-pct" aria-labelledby="h-mes-pct" aria-live="polite"></div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
     </section>
@@ -562,7 +560,7 @@ function guardarComanda(iso, c) {
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
 // Zerar um quadro sem apagar nada: guarda quanto ele tinha naquele momento (o "marco") e o quadro mostra só o que entrou depois.
-// Chaves: 'mes-AAAA-MM' (Porcentagem do mês), 'res-dia-AAAA-MM-DD', 'res-mes-AAAA-MM' e 'res-mesbarra-AAAA-MM' (aba Resultados)
+// Chaves: 'res-dia-AAAA-MM-DD', 'res-mes-AAAA-MM' e 'res-mesbarra-AAAA-MM' (aba Resultados)
 const memoriaMarco = {};
 const chaveMarco = c => 'bookafe-zero-' + c;
 function lerMarco(c) {
@@ -695,36 +693,6 @@ function renderTotais() {
     linha('Dinheiro no caixa (total do caixa + vendas)', caixa, 'destaque'),
     linha('Fechamento do caixa', caixa - sa - co, 'geral dia destaque'));
   $('pos-coleta').replaceChildren(linha(`Sobra para a abertura de ${dataBR(diaSeguinte(iso))}`, co, 'geral destaque'));
-  // Porcentagem do mês: dias do mês da data escolhida guardados neste navegador; a dica de cada forma mostra o crescimento dia a dia
-  const diasM = [...diasDoNavegador()].filter(([d]) => d.startsWith(iso.slice(0, 7) + '-')).sort(([a], [b]) => a < b ? -1 : 1);
-  const mesIso = iso.slice(0, 7), zero = lerMarco('mes-' + mesIso), rTudo = somaDias(diasM.map(([, d]) => d));
-  const rM = zero ? descontarZero(rTudo, zero) : rTudo, etM = diasM.map(([d, v]) => ({ rotulo: dataBR(d).slice(0, 5), formas: v.formas || {} }));
-  const escMes = (k, v) => zero ? `\nContando desde ${zero.quando} (porcentagem zerada)` : escalaCrescimento(etM, k, v);
-  // Quantas comandas usaram cada forma no mês (pela lista de comandas uma a uma; com o mês zerado, só as de depois de zerar).
-  // Uma comanda paga em duas formas conta nas duas.
-  const mz = zero && /(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2})/.exec(zero.quando), desde = mz ? `${mz[3]}-${mz[2]}-${mz[1]} ${mz[4]}` : '';
-  const qtd = {}; let semLista = 0;
-  for (const [d, v] of diasM) {
-    const l = lerComandasDia(d).filter(c => !desde || `${d} ${c.hora.slice(0, 5)}` >= desde);
-    if (!desde) semLista += Math.max(0, v.comandas - l.length);
-    for (const c of l) for (const k of Object.keys(c.formas)) qtd[k] = (qtd[k] || 0) + 1;
-  }
-  const nCom = n => `${n} comanda${n === 1 ? '' : 's'}`;
-  const formaMes = (k, nome, v = rM.formas[k] || 0) => linhaFormaPct(k, `${nome} · ${qtd[k] || 0}`, v, rM.centavos,
-    `${nome}: ${pct(v, rM.centavos)} do mês\n${fmt(v)} de ${fmt(rM.centavos)}\n${nCom(qtd[k] || 0)} pagas com ${nome}`
-    + (semLista ? `\n(${nCom(semLista)} antigas sem o detalhe por forma)` : '') + escMes(k, v));
-  $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
-  $('mes-pct').replaceChildren(
-    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${zero ? `Desde ${zero.quando}${zero.por ? ` (${zero.por})` : ''}` : `${diasM.length} dia${diasM.length === 1 ? '' : 's'}`} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
-    ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
-    ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
-    Object.assign(linha(`Total do mês · ${nCom(rM.comandas)}`, rM.centavos, 'geral dia destaque'), { tabIndex: 0 }));
-  $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escMes(null, rM.centavos);
-  // Zerar a porcentagem não apaga nada: guarda o que já tinha e passa a contar só o que entrar depois
-  if (rTudo.comandas) $('mes-pct').append(botaoSupervisor('Zerar porcentagem do mês', op => {
-    gravarMarco('mes-' + mesIso, { ...rTudo, quando: agoraTxt(), por: op }); renderTotais(); avisar(`Porcentagem do mês zerada por ${op}. Os totais dos dias continuam guardados.`);
-  }));
-  if (zero) $('mes-pct').append(botaoSupervisor('Voltar a contar o mês todo', op => { gravarMarco('mes-' + mesIso, null); renderTotais(); avisar(`A porcentagem voltou a contar o mês todo (${op}).`); }));
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
