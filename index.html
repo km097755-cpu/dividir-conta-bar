@@ -59,6 +59,8 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
 .tipos { display: grid; gap: 6px } .tipos label { display: flex; gap: 8px; align-items: center; font-weight: 400 }
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
+.mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
+#mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
 .panel.oliva { border-color: var(--oliva-line) } /* fundo continua o vermelho café; só a borda fica oliva */
@@ -204,7 +206,7 @@ ul.barras li.empty { display: block }
       <section aria-labelledby="h-mov-lista">
         <h2 id="h-mov-lista">Lançamentos do dia</h2>
         <div class="panel totais" id="mov-lista" aria-live="polite"></div>
-        <p class="hint">Cada lançamento entra no Suprimento/Retirada do quadro Caixa e vai junto no arquivo do "Finalizar o dia". Para corrigir um lançamento, lance o contrário (ex.: uma retirada do mesmo valor).</p>
+        <p class="hint">Cada lançamento entra no Suprimento/Retirada do quadro Caixa e vai junto no arquivo do "Finalizar o dia". Digitou errado? Toque em "Corrigir" no lançamento e digite a senha de um colaborador: ele fica riscado, sai do saldo e fica registrado quem corrigiu. Depois lance de novo o valor certo.</p>
       </section>
     </div>
   </section>
@@ -470,8 +472,9 @@ async function fechamentoDoDia(iso, comPasta) {
     ['Comandas do dia (hora)', ...Object.values(PAGAMENTOS), 'Total'],
     ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
       .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))]),
-    [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por'],
-    ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por])];
+    [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por', 'Corrigido (não conta)'],
+    ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, m.corrigido ? '0,00' : (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por,
+      m.corrigido ? `por ${m.corrigido.por} às ${m.corrigido.hora} (era ${reais(m.valor)})` : ''])];
   let texto = linhas.map(l => l.join(';')).join('\r\n');
   if (comPasta) { const t = await lerComandasDaPasta(iso); if (t.length) texto += '\r\n\r\nPagamentos de cada comanda\r\n' + copiaGeral([iso], new Map([[iso, t]])).replace(/^﻿/, ''); }
   return '﻿' + texto + '\r\n';
@@ -750,23 +753,23 @@ function renderTotais() {
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
-// Zerar (e voltar a contar) só com a senha de quem pode liberar
+// Zerar (e voltar a contar) só com a senha de quem pode liberar; quem = null aceita qualquer colaborador com senha
 const LIBERAM = ['Pilar', 'Solange'];
-function botaoSupervisor(texto, acao) {
+function botaoSupervisor(texto, acao, quem = LIBERAM) {
   const caixa = Object.assign(document.createElement('p'), { className: 'liberar' });
   const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
   b.addEventListener('click', () => {
     if (caixa.querySelector('input')) return caixa.querySelector('input').focus();
     const inp = Object.assign(document.createElement('input'), { type: 'password', inputMode: 'numeric', maxLength: 4, autocomplete: 'off', placeholder: '••••', className: 'plain' });
-    inp.setAttribute('aria-label', `Senha para ${texto.toLowerCase()} (só Pilar ou Solange)`);
+    inp.setAttribute('aria-label', `Senha para ${texto.toLowerCase()} (${quem ? 'só Pilar ou Solange' : 'qualquer colaborador com senha'})`);
     const ok = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Liberar' });
     const nao = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Cancelar' });
-    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: 'Senha da Pilar ou da Solange' });
+    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: quem ? 'Senha da Pilar ou da Solange' : 'Senha de quem está corrigindo' });
     msg.setAttribute('role', 'alert');
     const fechar = () => { inp.remove(); ok.remove(); nao.remove(); msg.remove(); b.focus(); };
     const tentar = () => {
       const op = operadorDa(inp.value);
-      if (op && LIBERAM.includes(op)) { fechar(); return acao(op); }
+      if (op && (!quem || quem.includes(op))) { fechar(); return acao(op); }
       msg.textContent = op ? `${op} não pode liberar: só Pilar ou Solange.` : 'Senha errada.'; inp.value = ''; inp.focus();
     };
     inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); });
@@ -1078,7 +1081,12 @@ document.querySelector('.abas').addEventListener('keydown', e => {
 // Suprimento/Retirada: cada lançamento com tipo, valor, motivo, quem lançou (senha de colaborador) e hora.
 // O saldo (suprimentos − retiradas) fica guardado como 'abastecimento' do dia, que as contas do caixa já usam.
 const memoriaMovs = {}, chaveMovs = iso => 'bookafe-movs-' + iso;
-const saldoMovs = l => l.reduce((a, m) => a + (m.tipo === 'sup' ? m.valor : -m.valor), 0);
+// Lançamento corrigido (digitado errado) fica na lista riscado, com quem corrigiu, e não conta no saldo
+const saldoMovs = l => l.reduce((a, m) => a + (m.corrigido ? 0 : m.tipo === 'sup' ? m.valor : -m.valor), 0);
+function corrigirMov(iso, i, por) {
+  const l = lerMovs(iso).map((m, j) => j === i && !m.corrigido ? { ...m, corrigido: { por, hora: horaAgora() } } : m);
+  gravarMovs(iso, l); return l[i];
+}
 function lerMovs(iso) {
   let l = null; try { l = JSON.parse(localStorage.getItem(chaveMovs(iso))); } catch {}
   if (!Array.isArray(l)) l = memoriaMovs[iso] || null;
@@ -1091,12 +1099,18 @@ function renderMovs() {
   const iso = $('data').value || hojeISO(), l = lerMovs(iso), span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
   const linhaM = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
   $('mov-dia').textContent = `Dia ${dataBR(iso)} (a data do quadro Caixa, na aba Comanda).`;
-  const sup = l.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = l.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
+  const vale = l.filter(m => !m.corrigido), sup = vale.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = vale.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
   $('mov-lista').replaceChildren(
-    ...(l.length ? l.map(m => {
+    ...(l.length ? l.map((m, i) => {
       const d = document.createElement('div'), esq = span(`${m.tipo === 'sup' ? 'S' : 'R'} · ${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
       esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }));
-      d.append(esq, span((m.tipo === 'sup' ? '+ ' : '− ') + fmt(m.valor))); return d;
+      if (m.corrigido) esq.append(Object.assign(document.createElement('small'), { className: 'mov-motivo', textContent: `Corrigido por ${m.corrigido.por} às ${m.corrigido.hora.slice(0, 5)} (não conta no saldo)` }));
+      else esq.append(botaoSupervisor('Corrigir', op => {
+        corrigirMov(iso, i, op); mostraValoresDia(); renderTotais(); renderMovs();
+        $('mov-ok').textContent = `Lançamento corrigido por ${op}. Se precisar, lance de novo com o valor certo.`;
+      }, null));
+      const val = span((m.tipo === 'sup' ? '+ ' : '− ') + fmt(m.valor), m.corrigido ? 'mov-corrigido' : '');
+      d.append(esq, val); return d;
     }) : [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Nenhum lançamento neste dia.' })]),
     linhaM('Total de suprimentos', '+ ' + fmt(sup)), linhaM('Total de retiradas', '− ' + fmt(ret)),
     linhaM('Saldo (vai para o caixa)', fmt(sup - ret), 'geral dia destaque'));
@@ -1268,11 +1282,19 @@ if (/[?&]teste\b/.test(location.search)) {
     const tentaMov = (valor, motivo, pin) => { $('mov-valor').value = valor; $('mov-motivo').value = motivo; $('mov-senha').value = pin; $('form-mov').requestSubmit(); return $('mov-err').textContent; };
     const e0 = tentaMov('10,00', 'troco', '0002'), e1 = tentaMov('10,00', 'troco', 'S9999'), e2 = tentaMov('10,00', '', 'S0002'), e3 = tentaMov('10,00', 'troco', 'S0002');
     const e4 = tentaMov('2,00', 'troco', 'r0002'), l6 = lerMovs('1999-05-06');
+    // Corrigir o primeiro lançamento pela tela, com senha: fica riscado e sai do saldo
+    const bc = $('mov-lista').querySelector('.liberar'); bc.querySelector('button').click();
+    bc.querySelector('input').value = '9999'; bc.querySelector('.btn').click(); const c1 = lerMovs('1999-05-06')[0].corrigido;
+    bc.querySelector('input').value = '0002'; bc.querySelector('.btn').click();
+    const l7 = lerMovs('1999-05-06'), saldoC = lerValor('abastecimento', '1999-05-06'), arqC = await fechamentoDoDia('1999-05-06', false);
+    const corrigiuOk = !c1 && l7[0].corrigido?.por === 'Kelly' && !l7[1].corrigido && saldoC === -200 && arqC.includes(';0,00;troco;Kelly;por Kelly às ')
+      && $('mov-lista').querySelectorAll('.liberar').length === 1;
     delete OPERADORES[hashSenha('0002')]; gravarMovs('1999-05-06', []); $('data').value = dataTela; mostraValoresDia(); renderTotais();
     ok(legado.length === 1 && legado[0].valor === 30000 && saldo === 25000 && arqMov.includes('Retirada;10:00:00;-50,00;gás;Kelly')
        && e0.startsWith('Digite S') && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && e4 === ''
        && l6.length === 2 && l6[0].por === 'Kelly' && l6[0].tipo === 'sup' && l6[0].valor === 1000 && l6[1].tipo === 'ret' && l6[1].valor === 200,
        'suprimento/retirada: S ou R + senha e motivo; saldo vai para o caixa e entra no fechamento do dia');
+    ok(corrigiuOk, 'corrigir lançamento só com senha: fica riscado, sai do saldo e aparece no fechamento');
     const guardada = pastaComandas, raiz = pastaFalsa('Teste');
     pastaComandas = Object.assign(raiz, { queryPermission: async () => 'granted' });
     try {
