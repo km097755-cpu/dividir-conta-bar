@@ -57,6 +57,9 @@ section { display: grid; gap: 16px; min-width: 0 }
 h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin: 0 }
 .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
+.tipos { display: grid; gap: 6px } .tipos label { display: flex; gap: 8px; align-items: center; font-weight: 400 }
+.mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
+#abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
 .panel.oliva { border-color: var(--oliva-line) } /* fundo continua o vermelho café; só a borda fica oliva */
 .field { display: grid; gap: 4px }
@@ -164,7 +167,47 @@ ul.barras li.empty { display: block }
   <nav class="abas" role="tablist" aria-label="Telas do app">
     <button type="button" role="tab" id="aba-comanda" aria-selected="true" aria-controls="tela-comanda">Comanda</button>
     <button type="button" role="tab" id="aba-resultados" aria-selected="false" aria-controls="tela-resultados" tabindex="-1">Resultados</button>
+    <button type="button" role="tab" id="aba-movs" aria-selected="false" aria-controls="tela-movs" tabindex="-1">Suprimento/Retirada</button>
   </nav>
+
+  <section id="tela-movs" role="tabpanel" aria-labelledby="aba-movs" hidden>
+    <div class="grid">
+      <section aria-labelledby="h-mov-novo">
+        <h2 id="h-mov-novo">Lançar suprimento ou retirada</h2>
+        <form class="panel" id="form-mov" novalidate>
+          <p class="hint" id="mov-dia"></p>
+          <div class="field">
+            <span class="field-title" id="mov-tipo-titulo">Tipo</span>
+            <div class="tipos" role="radiogroup" aria-labelledby="mov-tipo-titulo">
+              <label><input type="radio" name="mov-tipo" value="sup" checked> Suprimento (entra dinheiro no caixa)</label>
+              <label><input type="radio" name="mov-tipo" value="ret"> Retirada (sai dinheiro do caixa)</label>
+            </div>
+          </div>
+          <div class="field">
+            <label for="mov-valor">Valor</label>
+            <div class="money"><span aria-hidden="true">R$</span><input type="text" id="mov-valor" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
+          </div>
+          <div class="field">
+            <label for="mov-motivo">Motivo (obrigatório)</label>
+            <input type="text" id="mov-motivo" class="plain" maxlength="120" autocomplete="off" placeholder="Ex.: troco para o caixa, pagamento do gás">
+          </div>
+          <div class="field">
+            <label for="mov-senha">Senha de quem está lançando (4 dígitos)</label>
+            <input type="password" id="mov-senha" class="plain" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" aria-describedby="mov-senha-hint">
+            <div class="hint" id="mov-senha-hint">Só colaboradores com senha cadastrada podem lançar.</div>
+          </div>
+          <div class="err" id="mov-err" role="alert"></div>
+          <div class="check" id="mov-ok" role="status"></div>
+          <button class="btn" type="submit">Lançar</button>
+        </form>
+      </section>
+      <section aria-labelledby="h-mov-lista">
+        <h2 id="h-mov-lista">Lançamentos do dia</h2>
+        <div class="panel totais" id="mov-lista" aria-live="polite"></div>
+        <p class="hint">Cada lançamento entra no Suprimento/Retirada do quadro Caixa e vai junto no arquivo do "Finalizar o dia". Para corrigir um lançamento, lance o contrário (ex.: uma retirada do mesmo valor).</p>
+      </section>
+    </div>
+  </section>
 
   <section id="tela-resultados" role="tabpanel" aria-labelledby="aba-resultados" hidden>
     <div class="panel filtros-res">
@@ -199,15 +242,16 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Vem sozinha da Conferência/Caixa do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
         </div>
         <div class="field">
-          <label for="abastecimento">Suprimento de caixa</label>
-          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abastecimento" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abastecimento-err abastecimento-hint"></div>
+          <label for="abastecimento">Suprimento/Retirada</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abastecimento" readonly placeholder="0,00" aria-describedby="abastecimento-err abastecimento-hint"></div>
           <div class="err" id="abastecimento-err"></div>
-          <div class="hint" id="abastecimento-hint">Dinheiro colocado no caixa durante o dia (reforço de troco). Fica guardado para a data acima e não entra no total vendido.</div>
+          <div class="hint" id="abastecimento-hint">Saldo do dia: suprimentos − retiradas (não entra no total vendido). Para lançar, use o botão abaixo; só com a senha de um colaborador.</div>
+          <button type="button" class="btn-ghost" id="ir-movs">Lançar suprimento ou retirada</button>
         </div>
         <div class="field">
           <label for="total-caixa">Valor total do caixa</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total-caixa" readonly aria-describedby="total-caixa-hint"></div>
-          <div class="hint" id="total-caixa-hint">Abertura + suprimento (calculado sozinho).</div>
+          <div class="hint" id="total-caixa-hint">Abertura + suprimento/retirada (calculado sozinho).</div>
         </div>
        </div>
        <h2 id="h-conta">Conta</h2>
@@ -384,7 +428,7 @@ function copiaGeral(dias, porDia) {
     if (!v.comandas && !ab && !abs && !sa && !co) continue;
     resumo.push([dataBR(d), ...[ab, abs, v.formas.pix || 0, v.formas.debito || 0, v.formas.credito || 0, v.formas.dinheiro || 0, v.centavos, sa, co, ab + abs + v.centavos - sa - co].map(reais), v.comandas]);
   }
-  const cab = 'Data;Abertura;Suprimento;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Total;Comandas';
+  const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Total;Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
 async function lerComandasDaPasta(iso) {
@@ -419,13 +463,15 @@ async function fechamentoDoDia(iso, comPasta) {
   const dia = lerDia(iso), f = dia.formas || {}, v = t => lerValor(t, iso);
   const ab = v('abertura'), sup = v('abastecimento'), sa = v('saidas'), co = v('coleta'), caixa = ab + sup + dia.centavos;
   const linhas = [['Fechamento do dia', dataBR(iso)], ['Finalizado em', agoraTxt()], [],
-    ['Caixa', 'Valor (R$)'], ['Abertura de caixa', reais(ab)], ['Suprimento de caixa', reais(sup)], ['Valor total do caixa', reais(ab + sup)],
+    ['Caixa', 'Valor (R$)'], ['Abertura de caixa', reais(ab)], ['Suprimento/Retirada (saldo)', reais(sup)], ['Valor total do caixa', reais(ab + sup)],
     ...Object.entries(PAGAMENTOS).map(([k, n]) => ['Vendas em ' + n, reais(f[k] || 0)]), ...(f[''] ? [['Vendas sem forma de pagamento', reais(f[''])]] : []),
     ['Resultado do dia (Vendas)', reais(dia.centavos)], ['Vendas + abertura de caixa', reais(caixa)], ['Saídas/Compras', reais(sa)], ['Dinheiro no caixa (caixa − compras)', reais(caixa - sa)], ['Coleta/Cofre', reais(co)],
     ['Total', reais(caixa - sa - co)], [`Conferência/Caixa (vira a abertura de ${dataBR(diaSeguinte(iso))})`, reais(caixa - sa - co)], ['Comandas finalizadas', String(dia.comandas)], [],
     ['Comandas do dia (hora)', ...Object.values(PAGAMENTOS), 'Total'],
     ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
-      .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))])];
+      .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))]),
+    [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por'],
+    ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por])];
   let texto = linhas.map(l => l.join(';')).join('\r\n');
   if (comPasta) { const t = await lerComandasDaPasta(iso); if (t.length) texto += '\r\n\r\nPagamentos de cada comanda\r\n' + copiaGeral([iso], new Map([[iso, t]])).replace(/^﻿/, ''); }
   return '﻿' + texto + '\r\n';
@@ -698,9 +744,9 @@ function renderTotais() {
     linha('Total', caixa - co, 'geral dia destaque'));
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
-  $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
+  $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
   $('pos-coleta').replaceChildren(Object.assign(linha('Conferência/Caixa', caixa - co, 'geral dia destaque'), { tabIndex: 0 }));
-  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento + vendas − compras − coleta\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
+  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento/retirada + vendas − compras − coleta\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
@@ -1011,23 +1057,64 @@ function renderResultados() {
 })();
 
 // Abas
+const ABAS = ['comanda', 'resultados', 'movs'];
 function abrirAba(qual) {
-  const res = qual === 'resultados';
-  $('aba-comanda').setAttribute('aria-selected', String(!res)); $('aba-resultados').setAttribute('aria-selected', String(res));
-  $('aba-comanda').tabIndex = res ? -1 : 0; $('aba-resultados').tabIndex = res ? 0 : -1;
-  $('tela-comanda').hidden = res; $('tela-resultados').hidden = !res;
-  if (res) {
+  for (const a of ABAS) { const on = a === qual; $('aba-' + a).setAttribute('aria-selected', String(on)); $('aba-' + a).tabIndex = on ? 0 : -1; $('tela-' + a).hidden = !on; }
+  if (qual === 'resultados') {
     if (!$('res-dia').value) $('res-dia').value = $('data').value || hojeISO();
     if (!$('res-mes').value) $('res-mes').value = $('res-dia').value.slice(0, 7);
     carregarResultados(false);
   }
+  if (qual === 'movs') renderMovs();
 }
-$('aba-comanda').addEventListener('click', () => abrirAba('comanda'));
-$('aba-resultados').addEventListener('click', () => abrirAba('resultados'));
+for (const a of ABAS) $('aba-' + a).addEventListener('click', () => abrirAba(a));
 document.querySelector('.abas').addEventListener('keydown', e => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const prox = $('aba-comanda').getAttribute('aria-selected') === 'true' ? 'resultados' : 'comanda';
+  const i = ABAS.findIndex(a => $('aba-' + a).getAttribute('aria-selected') === 'true');
+  const prox = ABAS[(i + (e.key === 'ArrowRight' ? 1 : ABAS.length - 1)) % ABAS.length];
   abrirAba(prox); $('aba-' + prox).focus();
+});
+
+// Suprimento/Retirada: cada lançamento com tipo, valor, motivo, quem lançou (senha de colaborador) e hora.
+// O saldo (suprimentos − retiradas) fica guardado como 'abastecimento' do dia, que as contas do caixa já usam.
+const memoriaMovs = {}, chaveMovs = iso => 'bookafe-movs-' + iso;
+const saldoMovs = l => l.reduce((a, m) => a + (m.tipo === 'sup' ? m.valor : -m.valor), 0);
+function lerMovs(iso) {
+  let l = null; try { l = JSON.parse(localStorage.getItem(chaveMovs(iso))); } catch {}
+  if (!Array.isArray(l)) l = memoriaMovs[iso] || null;
+  if (l) return l;
+  const antigo = lerValor('abastecimento', iso); // valor digitado antes desta versão vira um lançamento
+  return antigo ? [{ hora: '—', tipo: antigo > 0 ? 'sup' : 'ret', valor: Math.abs(antigo), motivo: 'Lançado antes do controle por senha', por: '—' }] : [];
+}
+function gravarMovs(iso, l) { memoriaMovs[iso] = l; try { localStorage.setItem(chaveMovs(iso), JSON.stringify(l)); } catch {} gravarValor('abastecimento', iso, saldoMovs(l)); }
+function renderMovs() {
+  const iso = $('data').value || hojeISO(), l = lerMovs(iso), span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
+  const linhaM = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
+  $('mov-dia').textContent = `Dia ${dataBR(iso)} (a data do quadro Caixa, na aba Comanda).`;
+  const sup = l.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = l.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
+  $('mov-lista').replaceChildren(
+    ...(l.length ? l.map(m => {
+      const d = document.createElement('div'), esq = span(`${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
+      esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }));
+      d.append(esq, span((m.tipo === 'sup' ? '+ ' : '− ') + fmt(m.valor))); return d;
+    }) : [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Nenhum lançamento neste dia.' })]),
+    linhaM('Total de suprimentos', '+ ' + fmt(sup)), linhaM('Total de retiradas', '− ' + fmt(ret)),
+    linhaM('Saldo (vai para o caixa)', fmt(sup - ret), 'geral dia destaque'));
+}
+$('ir-movs').addEventListener('click', () => { abrirAba('movs'); $('mov-valor').focus(); });
+$('mov-senha').addEventListener('input', () => { $('mov-senha').value = $('mov-senha').value.replace(/\D/g, '').slice(0, 4); });
+$('form-mov').addEventListener('submit', e => {
+  e.preventDefault();
+  const iso = $('data').value || hojeISO(), tipo = document.querySelector('input[name="mov-tipo"]:checked').value;
+  const v = parseValor($('mov-valor').value.trim()), motivo = limpaNome($('mov-motivo').value), op = operadorDa($('mov-senha').value);
+  const erro = !v ? 'Digite o valor (maior que zero).' : v > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`
+    : !motivo ? 'Escreva o motivo.' : !op ? 'Senha errada: só colaboradores com senha cadastrada podem lançar.' : '';
+  $('mov-err').textContent = erro; $('mov-ok').textContent = '';
+  if (erro) return;
+  gravarMovs(iso, [...lerMovs(iso), { hora: horaAgora(), tipo, valor: v, motivo, por: op }]);
+  $('mov-valor').value = ''; $('mov-motivo').value = ''; $('mov-senha').value = '';
+  $('mov-ok').textContent = tipo === 'sup' ? `Suprimento de ${fmt(v)} lançado por ${op}.` : `Retirada de ${fmt(v)} lançada por ${op}.`;
+  mostraValoresDia(); renderTotais(); renderMovs();
 });
 $('res-dia').addEventListener('input', () => { if ($('res-dia').value) $('res-mes').value = $('res-dia').value.slice(0, 7); renderResultados(); });
 $('res-mes').addEventListener('input', renderResultados);
@@ -1164,6 +1251,18 @@ if (/[?&]teste\b/.test(location.search)) {
       async getFile() { return { text: async () => txt }; }, async createWritable() { let b = ''; return { write: async t => { b += t; }, close: async () => { txt = b; } }; } }); } return filhos.get(n); },
     async *entries() { yield* filhos.entries(); } }; };
   (async () => {
+    // Suprimento/Retirada: lançamentos com senha de colaborador; o saldo vai para o caixa (teste com senha de mentira)
+    gravarValor('abastecimento', '1999-05-05', 30000); const legado = lerMovs('1999-05-05');
+    gravarMovs('1999-05-05', [...legado, { hora: '10:00:00', tipo: 'ret', valor: 5000, motivo: 'gás', por: 'Kelly' }]);
+    const saldo = lerValor('abastecimento', '1999-05-05'), arqMov = await fechamentoDoDia('1999-05-05', false);
+    gravarMovs('1999-05-05', []); gravarValor('abastecimento', '1999-05-05', 0);
+    OPERADORES[hashSenha('0002')] = 'Kelly'; const dataTela = $('data').value; $('data').value = '1999-05-06';
+    const tentaMov = (valor, motivo, pin) => { $('mov-valor').value = valor; $('mov-motivo').value = motivo; $('mov-senha').value = pin; $('form-mov').requestSubmit(); return $('mov-err').textContent; };
+    const e1 = tentaMov('10,00', 'troco', '9999'), e2 = tentaMov('10,00', '', '0002'), e3 = tentaMov('10,00', 'troco', '0002'), l6 = lerMovs('1999-05-06');
+    delete OPERADORES[hashSenha('0002')]; gravarMovs('1999-05-06', []); $('data').value = dataTela; mostraValoresDia(); renderTotais();
+    ok(legado.length === 1 && legado[0].valor === 30000 && saldo === 25000 && arqMov.includes('Retirada;10:00:00;-50,00;gás;Kelly')
+       && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && l6.length === 1 && l6[0].por === 'Kelly' && l6[0].valor === 1000,
+       'suprimento/retirada: só com senha e motivo; saldo vai para o caixa e entra no fechamento do dia');
     const guardada = pastaComandas, raiz = pastaFalsa('Teste');
     pastaComandas = Object.assign(raiz, { queryPermission: async () => 'granted' });
     try {
