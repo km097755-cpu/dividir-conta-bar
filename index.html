@@ -264,6 +264,11 @@ ul.barras li.empty { display: block }
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
         <div class="acoes" id="acoes-fechamento"></div>
         <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads).</p>
+        <div class="field">
+          <span class="field-title">Pasta onde salvar</span>
+          <button type="button" class="btn-ghost" id="escolher-pasta-fech">Escolher pasta onde salvar</button>
+          <div class="hint" id="pasta-fech-hint">Nenhuma pasta escolhida: o fechamento vai para Downloads. Ex.: F:\Bookafé (Comandas).</div>
+        </div>
       </div>
       <h2 id="h-mes-pct">Porcentagem do mês</h2>
       <div class="panel totais" id="mes-pct" aria-labelledby="h-mes-pct" aria-live="polite"></div>
@@ -507,15 +512,23 @@ function avisar(msg, ms = 3000) {
 const $ = id => document.getElementById(id);
 let pessoas = [];
 $('data').value = hojeISO();
-const mostraPasta = () => { if (pastaComandas) $('pasta-hint').textContent = `Pasta escolhida: ${pastaComandas.name}. Cada comanda finalizada vai para Comandas\\(mês), com Cópia diária e Cópia semanal.`; };
+const mostraPasta = () => {
+  if (!pastaComandas) return;
+  $('pasta-hint').textContent = `Pasta escolhida: ${pastaComandas.name}. Cada comanda finalizada vai para Comandas\\(mês), com Cópia diária e Cópia semanal.`;
+  $('pasta-fech-hint').textContent = `Salvando em: ${pastaComandas.name}\\Fechamento do dia\\(mês). Toque no botão para trocar a pasta.`;
+};
+// A mesma pasta serve para as comandas e para o fechamento do dia; os dois botões escolhem essa pasta
+async function escolherPasta() {
+  try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite' }); await guardaPasta('put', pastaComandas); mostraPasta(); }
+  catch { /* escolha cancelada */ }
+}
 if ('showDirectoryPicker' in window) {
   guardaPasta('get').then(h => { if (h && !pastaComandas) { pastaComandas = h; mostraPasta(); } });
-  $('escolher-pasta').addEventListener('click', async () => {
-    try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite' }); await guardaPasta('put', pastaComandas); mostraPasta(); }
-    catch { /* escolha cancelada */ }
-  });
+  $('escolher-pasta').addEventListener('click', escolherPasta);
+  $('escolher-pasta-fech').addEventListener('click', escolherPasta);
 } else {
-  $('escolher-pasta').hidden = true;
+  $('escolher-pasta').hidden = true; $('escolher-pasta-fech').hidden = true;
+  $('pasta-fech-hint').textContent = 'Neste navegador não dá para escolher pasta: o fechamento vai para Downloads. No computador, use o Chrome.';
   $('pasta-hint').textContent = 'Neste navegador não dá para escolher pasta: cada comanda finalizada vai para Downloads. No computador, use o Chrome para salvar direto em E:\\Bookafé.';
 }
 // Total do dia: soma do valor pago (menos troco) das comandas finalizadas, guardado no navegador por data (não some ao abrir comanda nova)
