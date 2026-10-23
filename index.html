@@ -252,6 +252,7 @@ ul.barras li.empty { display: block }
       <div class="panel totais" id="totais" aria-labelledby="h-totais" aria-live="polite"></div>
       <h2 id="h-fechamento">Fechamento do dia</h2>
       <div class="panel" aria-labelledby="h-fechamento">
+        <div class="totais" id="fech-topo" aria-live="polite"></div>
         <div class="field">
           <label for="saidas">Saídas/Compras</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
@@ -420,8 +421,8 @@ async function fechamentoDoDia(iso, comPasta) {
   const linhas = [['Fechamento do dia', dataBR(iso)], ['Finalizado em', agoraTxt()], [],
     ['Caixa', 'Valor (R$)'], ['Abertura de caixa', reais(ab)], ['Suprimento de caixa', reais(sup)], ['Valor total do caixa', reais(ab + sup)],
     ...Object.entries(PAGAMENTOS).map(([k, n]) => ['Vendas em ' + n, reais(f[k] || 0)]), ...(f[''] ? [['Vendas sem forma de pagamento', reais(f[''])]] : []),
-    ['Resultado do dia (Vendas)', reais(dia.centavos)], ['Saídas/Compras', reais(sa)], ['Dinheiro no caixa (caixa − compras)', reais(caixa - sa)], ['Coleta/Cofre', reais(co)],
-    ['Total', reais(caixa - sa - co)], [`Fechamento de caixa (abertura de ${dataBR(diaSeguinte(iso))})`, reais(co)], ['Comandas finalizadas', String(dia.comandas)], [],
+    ['Resultado do dia (Vendas)', reais(dia.centavos)], ['Vendas + abertura de caixa', reais(caixa)], ['Saídas/Compras', reais(sa)], ['Dinheiro no caixa (caixa − compras)', reais(caixa - sa)], ['Coleta/Cofre', reais(co)],
+    ['Total', reais(caixa - sa - co)], ['Fechamento de caixa', reais(caixa - sa - co)], [`Abertura de ${dataBR(diaSeguinte(iso))} (coleta/cofre)`, reais(co)], ['Comandas finalizadas', String(dia.comandas)], [],
     ['Comandas do dia (hora)', ...Object.values(PAGAMENTOS), 'Total'],
     ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
       .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))])];
@@ -693,9 +694,11 @@ function renderTotais() {
     linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
     linha('Dinheiro no caixa (caixa − compras)', caixa, 'destaque'),
     linha('Total', caixa - co, 'geral dia destaque'));
-  // Fechamento de caixa = a coleta/cofre, que vira a abertura do dia seguinte
-  $('pos-coleta').replaceChildren(Object.assign(linha('Fechamento de caixa', co, 'geral dia destaque'), { tabIndex: 0 }));
-  $('pos-coleta').lastChild.dataset.dica = `Vira a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
+  // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Fechamento de caixa = abertura + vendas − compras − coleta
+  $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
+  $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
+  $('pos-coleta').replaceChildren(Object.assign(linha('Fechamento de caixa', caixa - co, 'geral dia destaque'), { tabIndex: 0 }));
+  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento + vendas − compras − coleta\nA coleta (${fmt(co)}) vira a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
