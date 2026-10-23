@@ -113,6 +113,10 @@ ul.people .pvalor { font-family: var(--f-num) }
 .totais p.realce { color: var(--accent); font-size: .88rem; font-weight: 800 } /* rótulo "Dia … · N comandas" e "N dias · N comandas" */
 .zerar { justify-self: end; min-height: 36px; font-size: .85rem; margin-top: 4px }
 .acoes { display: grid; gap: 4px } .acoes:empty { display: none } .acoes .hint { margin: 0; text-align: right }
+/* Zerar com senha: o campo da senha abre ao lado do botão */
+.liberar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; margin: 4px 0 0; justify-self: end }
+.liberar .zerar { margin-top: 0 } .liberar input { width: 6.5em; min-height: 36px; padding: 6px 10px } .liberar .btn, .liberar .btn-ghost { min-height: 36px }
+.liberar small { flex-basis: 100%; text-align: right }
 .alert { background: var(--err-soft); color: var(--err); border-radius: 8px; padding: 10px 12px; font-weight: 700 }
 #teste { font-family: var(--f-num); font-size: .85rem; white-space: pre-wrap; overflow-x: auto }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
@@ -703,17 +707,45 @@ function renderTotais() {
     + (semLista ? `\n(${nCom(semLista)} antigas sem o detalhe por forma)` : '') + escMes(k, v));
   $('h-mes-pct').textContent = `Porcentagem do mês (${new Date(iso + 'T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`;
   $('mes-pct').replaceChildren(
-    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${zero ? `Desde ${zero.quando}` : `${diasM.length} dia${diasM.length === 1 ? '' : 's'}`} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
+    Object.assign(document.createElement('p'), { className: 'label realce', textContent: `${zero ? `Desde ${zero.quando}${zero.por ? ` (${zero.por})` : ''}` : `${diasM.length} dia${diasM.length === 1 ? '' : 's'}`} · ${rM.comandas} comanda${rM.comandas === 1 ? '' : 's'} finalizada${rM.comandas === 1 ? '' : 's'}` }),
     ...Object.entries(PAGAMENTOS).map(([k, nome]) => formaMes(k, nome)),
     ...(rM.formas[''] ? [formaMes('', 'Sem forma de pagamento')] : []),
     Object.assign(linha(`Total do mês · ${nCom(rM.comandas)}`, rM.centavos, 'geral dia destaque'), { tabIndex: 0 }));
   $('mes-pct').lastChild.dataset.dica = `Total do mês: ${fmt(rM.centavos)}` + escMes(null, rM.centavos);
   // Zerar a porcentagem não apaga nada: guarda o que já tinha e passa a contar só o que entrar depois
-  if (rTudo.comandas) $('mes-pct').append(botaoConfirma('Zerar porcentagem do mês', () => {
-    gravarMarco('mes-' + mesIso, { ...rTudo, quando: agoraTxt() }); renderTotais(); avisar('Porcentagem do mês zerada. Os totais dos dias continuam guardados.');
+  if (rTudo.comandas) $('mes-pct').append(botaoSupervisor('Zerar porcentagem do mês', op => {
+    gravarMarco('mes-' + mesIso, { ...rTudo, quando: agoraTxt(), por: op }); renderTotais(); avisar(`Porcentagem do mês zerada por ${op}. Os totais dos dias continuam guardados.`);
   }));
-  if (zero) $('mes-pct').append(botaoConfirma('Voltar a contar o mês todo', () => { gravarMarco('mes-' + mesIso, null); renderTotais(); avisar('A porcentagem voltou a contar o mês todo.'); }));
-  if (dia.comandas) box.append(botaoConfirma('Zerar total do dia', () => { zerarDia(iso); calcular(); avisar('Total do dia zerado.'); }));
+  if (zero) $('mes-pct').append(botaoSupervisor('Voltar a contar o mês todo', op => { gravarMarco('mes-' + mesIso, null); renderTotais(); avisar(`A porcentagem voltou a contar o mês todo (${op}).`); }));
+  if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
+}
+
+// Zerar (e voltar a contar) só com a senha de quem pode liberar
+const LIBERAM = ['Pilar', 'Solange'];
+function botaoSupervisor(texto, acao) {
+  const caixa = Object.assign(document.createElement('p'), { className: 'liberar' });
+  const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
+  b.addEventListener('click', () => {
+    if (caixa.querySelector('input')) return caixa.querySelector('input').focus();
+    const inp = Object.assign(document.createElement('input'), { type: 'password', inputMode: 'numeric', maxLength: 4, autocomplete: 'off', placeholder: '••••', className: 'plain' });
+    inp.setAttribute('aria-label', `Senha para ${texto.toLowerCase()} (só Pilar ou Solange)`);
+    const ok = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Liberar' });
+    const nao = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Cancelar' });
+    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: 'Senha da Pilar ou da Solange' });
+    msg.setAttribute('role', 'alert');
+    const fechar = () => { inp.remove(); ok.remove(); nao.remove(); msg.remove(); b.focus(); };
+    const tentar = () => {
+      const op = operadorDa(inp.value);
+      if (op && LIBERAM.includes(op)) { fechar(); return acao(op); }
+      msg.textContent = op ? `${op} não pode liberar: só Pilar ou Solange.` : 'Senha errada.'; inp.value = ''; inp.focus();
+    };
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') tentar(); if (e.key === 'Escape') fechar(); });
+    ok.addEventListener('click', tentar); nao.addEventListener('click', fechar);
+    caixa.append(inp, ok, nao, msg); inp.focus();
+  });
+  caixa.append(b);
+  return caixa;
 }
 
 // Botão que pede um segundo toque em até 4 s antes de agir (evita zerar sem querer)
@@ -932,9 +964,9 @@ function renderResultados() {
   cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', zDia ? null : cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })));
   cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', zMes ? null : diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })));
   const acoes = (box, chave, r, z, oque) => box.replaceChildren(
-    ...(z ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: `Zerado em ${z.quando}: mostrando só o que entrou depois.` })] : []),
-    ...(r.comandas ? [botaoConfirma(`Zerar ${oque}`, () => { gravarMarco(chave, { ...r, quando: agoraTxt() }); renderResultados(); })] : []),
-    ...(z ? [botaoConfirma('Voltar a contar tudo', () => { gravarMarco(chave, null); renderResultados(); })] : []));
+    ...(z ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: `Zerado em ${z.quando}${z.por ? ` por ${z.por}` : ''}: mostrando só o que entrou depois.` })] : []),
+    ...(r.comandas ? [botaoSupervisor(`Zerar ${oque}`, op => { gravarMarco(chave, { ...r, quando: agoraTxt(), por: op }); renderResultados(); })] : []),
+    ...(z ? [botaoSupervisor('Voltar a contar tudo', () => { gravarMarco(chave, null); renderResultados(); })] : []));
   acoes($('acoes-dia'), 'res-dia-' + dia, rDia, zDia, 'resultado do dia');
   acoes($('acoes-mes'), 'res-mes-' + mes, rMes, zMes, 'resultado do mês');
   $('h-res-dia').textContent = `Resultado do dia ${dataBR(dia)}`;
@@ -1103,6 +1135,13 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(Object.values(OPERADORES).join() === 'Pilar,Kelly,Kleber,Andrea,Solange' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'cinco pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
   ok(operadorDa('') === null && operadorDa('123') === null && operadorDa('12345') === null && operadorDa('abcd') === null
      && Array.from({ length: 10000 }, (_, n) => String(n).padStart(4, '0')).filter(operadorDa).length === Object.keys(OPERADORES).length, 'só as senhas cadastradas abrem; o resto é recusado');
+  // Zerar só com a senha de quem libera (teste com senhas de mentira, apagadas logo depois)
+  OPERADORES[hashSenha('0000')] = 'Pilar'; OPERADORES[hashSenha('0001')] = 'Kelly';
+  const feitos = [], bz = botaoSupervisor('Zerar teste', op => feitos.push(op)); bz.querySelector('button').click();
+  const tenta = pin => { bz.querySelector('input').value = pin; bz.querySelector('.btn').click(); };
+  tenta('9999'); const m1 = bz.querySelector('small').textContent; tenta('0001'); const m2 = bz.querySelector('small').textContent; tenta('0000');
+  delete OPERADORES[hashSenha('0000')]; delete OPERADORES[hashSenha('0001')];
+  ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input'), 'zerar só libera com a senha da Pilar ou da Solange');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
