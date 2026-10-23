@@ -48,7 +48,7 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 24px 48px;
 }
-.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 24px }
+.wrap { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px } /* minmax: sem rolagem lateral no celular */
 header h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em }
 header p { margin: 6px 0 0; color: var(--muted); max-width: 60ch }
 .grid { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start }
@@ -60,6 +60,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .tipos { display: grid; gap: 6px } .tipos label { display: flex; gap: 8px; align-items: center; font-weight: 400 }
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
+.mov-caixa { font-weight: 600 }
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
@@ -127,7 +128,8 @@ ul.people .pvalor { font-family: var(--f-num) }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 @media (prefers-reduced-motion: no-preference) { button { transition: filter .15s } button:hover { filter: brightness(1.08) } }
 /* Abas Comanda / Resultados */
-.abas { display: flex; gap: 8px; border-bottom: 2px solid var(--line) }
+.abas { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 2px solid var(--line) }
+@media (max-width: 480px) { .abas { gap: 2px } .abas button { padding: 0 10px } } /* 3 abas cabem no celular */
 .abas button { background: transparent; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; padding: 0 18px; font-weight: 700; margin-bottom: -2px }
 .abas button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); background: var(--surface) }
 /* Dashboard */
@@ -1100,12 +1102,14 @@ function renderMovs() {
   const linhaM = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
   $('mov-dia').textContent = `Dia ${dataBR(iso)} (a data do quadro Caixa, na aba Comanda).`;
   const vale = l.filter(m => !m.corrigido), sup = vale.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = vale.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
-  $('mov-lista').replaceChildren(
+  const ab = lerValor('abertura', iso); let caixa = ab; // caixa vai somando (suprimento) ou tirando (retirada) a cada lançamento
+  $('mov-lista').replaceChildren(linhaM('Abertura de caixa', fmt(ab)),
     ...(l.length ? l.map((m, i) => {
+      if (!m.corrigido) caixa += m.tipo === 'sup' ? m.valor : -m.valor;
       const d = document.createElement('div'), esq = span(`${m.tipo === 'sup' ? 'S' : 'R'} · ${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
       esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }));
       if (m.corrigido) esq.append(Object.assign(document.createElement('small'), { className: 'mov-motivo', textContent: `Corrigido por ${m.corrigido.por} às ${m.corrigido.hora.slice(0, 5)} (não conta no saldo)` }));
-      else esq.append(botaoSupervisor('Corrigir', op => {
+      else esq.append(Object.assign(document.createElement('small'), { className: 'mov-motivo mov-caixa', textContent: `Caixa fica em ${fmt(caixa)}` }), botaoSupervisor('Corrigir', op => {
         corrigirMov(iso, i, op); mostraValoresDia(); renderTotais(); renderMovs();
         $('mov-ok').textContent = `Lançamento corrigido por ${op}. Se precisar, lance de novo com o valor certo.`;
       }, null));
@@ -1113,7 +1117,8 @@ function renderMovs() {
       d.append(esq, val); return d;
     }) : [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Nenhum lançamento neste dia.' })]),
     linhaM('Total de suprimentos', '+ ' + fmt(sup)), linhaM('Total de retiradas', '− ' + fmt(ret)),
-    linhaM('Saldo (vai para o caixa)', fmt(sup - ret), 'geral dia destaque'));
+    linhaM('Saldo (suprimentos − retiradas)', fmt(sup - ret)),
+    linhaM('Valor total do caixa (abertura + saldo)', fmt(ab + sup - ret), 'geral dia destaque'));
 }
 $('ir-movs').addEventListener('click', () => { abrirAba('movs'); $('mov-valor').focus(); });
 // S ou R antes da senha escolhe o tipo (S = Suprimento, R = Retirada); depois só os 4 números da senha
@@ -1281,7 +1286,8 @@ if (/[?&]teste\b/.test(location.search)) {
     OPERADORES[hashSenha('0002')] = 'Kelly'; const dataTela = $('data').value; $('data').value = '1999-05-06';
     const tentaMov = (valor, motivo, pin) => { $('mov-valor').value = valor; $('mov-motivo').value = motivo; $('mov-senha').value = pin; $('form-mov').requestSubmit(); return $('mov-err').textContent; };
     const e0 = tentaMov('10,00', 'troco', '0002'), e1 = tentaMov('10,00', 'troco', 'S9999'), e2 = tentaMov('10,00', '', 'S0002'), e3 = tentaMov('10,00', 'troco', 'S0002');
-    const e4 = tentaMov('2,00', 'troco', 'r0002'), l6 = lerMovs('1999-05-06');
+    gravarValor('abertura', '1999-05-06', 10000); renderMovs(); const listaAb = $('mov-lista').innerText;
+    const e4 = tentaMov('2,00', 'troco', 'r0002'), l6 = lerMovs('1999-05-06'), listaAntes = $('mov-lista').innerText;
     // Corrigir o primeiro lançamento pela tela, com senha: fica riscado e sai do saldo
     const bc = $('mov-lista').querySelector('.liberar'); bc.querySelector('button').click();
     bc.querySelector('input').value = '9999'; bc.querySelector('.btn').click(); const c1 = lerMovs('1999-05-06')[0].corrigido;
@@ -1289,6 +1295,9 @@ if (/[?&]teste\b/.test(location.search)) {
     const l7 = lerMovs('1999-05-06'), saldoC = lerValor('abastecimento', '1999-05-06'), arqC = await fechamentoDoDia('1999-05-06', false);
     const corrigiuOk = !c1 && l7[0].corrigido?.por === 'Kelly' && !l7[1].corrigido && saldoC === -200 && arqC.includes(';0,00;troco;Kelly;por Kelly às ')
       && $('mov-lista').querySelectorAll('.liberar').length === 1;
+    const listaDepois = $('mov-lista').innerText, tem = (t, ...v) => v.every(x => t.includes(x)); gravarValor('abertura', '1999-05-06', 0);
+    ok(tem(listaAb, 'Caixa fica em ' + fmt(11000)) && tem(listaAntes, 'Caixa fica em ' + fmt(11000), 'Caixa fica em ' + fmt(10800), fmt(10800))
+       && tem(listaDepois, 'Caixa fica em ' + fmt(9800), fmt(9800)) && !listaDepois.includes(fmt(10800)), 'caixa soma o suprimento e tira a retirada na hora, lançamento a lançamento');
     delete OPERADORES[hashSenha('0002')]; gravarMovs('1999-05-06', []); $('data').value = dataTela; mostraValoresDia(); renderTotais();
     ok(legado.length === 1 && legado[0].valor === 30000 && saldo === 25000 && arqMov.includes('Retirada;10:00:00;-50,00;gás;Kelly')
        && e0.startsWith('Digite S') && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && e4 === ''
