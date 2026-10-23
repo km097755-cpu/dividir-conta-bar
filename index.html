@@ -70,7 +70,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .field .btn-ghost { justify-self: start }
 .money { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden }
 .money span { padding: 10px 10px; color: var(--muted); font-family: var(--f-num); border-right: 1px solid var(--line) }
-input[type="text"], input[type="date"] { font: inherit; color: var(--ink); background: var(--bg); border: 0; padding: 10px 12px; width: 100%; min-width: 0; font-family: var(--f-num); font-variant-numeric: tabular-nums }
+input[type="text"], input[type="date"], input[type="password"] { font: inherit; color: var(--ink); background: var(--bg); border: 0; padding: 10px 12px; width: 100%; min-width: 0; font-family: var(--f-num); font-variant-numeric: tabular-nums }
 .plain { border: 1px solid var(--line) !important; border-radius: 8px }
 input:focus-visible, button:focus-visible, .money:focus-within { outline: 3px solid var(--accent); outline-offset: 2px }
 .money input:focus-visible { outline: none }
@@ -875,6 +875,11 @@ $('form-conta').addEventListener('submit', e => e.preventDefault());
 $('form-add').addEventListener('submit', e => {
   e.preventDefault();
   const el = $('novo-valor'), t = el.value.trim(), valor = t === '' ? null : parseValor(t);
+  // Sem o total da conta o pagamento não aparece na divisão: pede o total antes
+  if ($('total').value.trim() === '' || parseValor($('total').value.trim()) === null) {
+    $('valor-err').textContent = 'Digite primeiro o total da conta (quadro Conta) e depois toque em Adicionar.';
+    $('total').setAttribute('aria-invalid', 'true'); $('total').scrollIntoView({ block: 'center' }); $('total').focus(); return;
+  }
   const msg = pessoas.length >= MAX_PESSOAS ? `O limite é de ${MAX_PESSOAS} pagamentos.`
     : t !== '' && valor === null ? 'Valor inválido. Use números com até 2 casas, ex.: 50,00 (ou deixe vazio para a parte igual).'
     : valor > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.` : '';
@@ -1188,6 +1193,15 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(erro.includes('pelo menos uma pessoa'), 'sem pessoas gera aviso');
   ok(parseValor('1.234,56') === 123456 && parseValor('1234.5') === 123450 && parseValor('1.234') === 123400, 'lê formatos pt-BR');
   ok(parseValor('-5') === null && parseValor('abc') === null && parseValor('1,234') === null, 'rejeita entradas inválidas');
+  { // Adicionar sem o total da conta: pede o total e não some com o pagamento; com o total, entra na divisão
+    const antes = pessoas, totalAntes = $('total').value; pessoas = [];
+    $('total').value = ''; $('novo-valor').value = '25,00'; $('form-add').requestSubmit(); const semTotal = pessoas.length, aviso = $('valor-err').textContent;
+    $('total').value = '50,00'; $('novo-valor').value = '25,00'; $('form-add').requestSubmit();
+    const divisao = $('resultado').innerText;
+    ok(semTotal === 0 && aviso.startsWith('Digite primeiro o total') && pessoas.length === 1 && divisao.includes(fmt(5000)) && divisao.includes(fmt(2500)),
+      'Adicionar sem total da conta avisa; com total, o pagamento aparece na divisão');
+    pessoas = antes; $('total').value = totalAntes; $('valor-err').textContent = ''; renderLista(); calcular();
+  }
   const real = fmt(123456); // "R$ 1.234,56" com espaço não separável do Intl
   ok(/^R\$\s1\.234,56$/.test(real)
      && mensagemCobranca('Ana', 123456, '  ana@ex.com ') === `Oi, Ana! A sua parte da conta do bar ficou em ${real}. Pix: ana@ex.com. Obrigado!`
