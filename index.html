@@ -196,7 +196,7 @@ ul.barras li.empty { display: block }
           <label for="abertura">Abertura de caixa</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abertura" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abertura-err abertura-hint"></div>
           <div class="err" id="abertura-err"></div>
-          <div class="hint" id="abertura-hint">Dinheiro no caixa no começo do dia. Fica guardado para a data acima e não entra no total vendido.</div>
+          <div class="hint" id="abertura-hint">Vem sozinha da Conferência/Caixa do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
         </div>
         <div class="field">
           <label for="abastecimento">Suprimento de caixa</label>
@@ -593,6 +593,7 @@ function lerValor(tipo, iso) {
 }
 function gravarValor(tipo, iso, c) { memoriaValor[chaveValor(tipo, iso)] = c; try { c ? localStorage.setItem(chaveValor(tipo, iso), String(c)) : localStorage.removeItem(chaveValor(tipo, iso)); } catch {} }
 function mostraValoresDia() {
+  puxarAbertura($('data').value || hojeISO());
   for (const tipo of VALORES_DIA) {
     const c = lerValor(tipo, $('data').value || hojeISO());
     $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
@@ -616,6 +617,10 @@ for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   if (ruim) return;
   const iso = $('data').value || hojeISO();
   gravarValor(tipo, iso, v);
+  if (tipo === 'abertura') { // digitou: vale o que foi digitado; apagou: volta a vir do dia anterior
+    gravarValor('abmanual', iso, t === '' ? 0 : 1);
+    if (t === '') { puxarAbertura(iso); const c = lerValor('abertura', iso); $('abertura').value = c ? reais(c) : ''; }
+  }
   renderTotais();
 });
 $('data').addEventListener('input', mostraValoresDia);
@@ -698,7 +703,6 @@ function renderTotais() {
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
   $('pos-coleta').replaceChildren(Object.assign(linha('Conferência/Caixa', caixa - co, 'geral dia destaque'), { tabIndex: 0 }));
   $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento + vendas − compras − coleta\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
-  passarParaAmanha(iso, caixa - co);
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
@@ -730,14 +734,17 @@ function botaoSupervisor(texto, acao) {
   return caixa;
 }
 
-// A Conferência/Caixa (o que sobra no caixa) vira sozinha a abertura do dia seguinte. Se a abertura de lá foi trocada à mão, ela é respeitada
-// ('transf-AAAA-MM-DD' guarda o último valor passado, para saber se a abertura do dia seguinte ainda é a que o app pôs).
-// A versão antiga passava a coleta para a abertura: esse valor também conta como "posto pelo app" e é trocado.
-function passarParaAmanha(iso, valor) {
-  const am = diaSeguinte(iso), v = Math.max(0, valor), ultimo = lerValor('transf', iso), atual = lerValor('abertura', am);
-  if (v === ultimo && atual === v) return;
-  if (!atual || atual === ultimo || (!ultimo && atual === lerValor('coleta', iso))) gravarValor('abertura', am, v);
-  gravarValor('transf', iso, v);
+// O que sobra no caixa no fim de um dia (Conferência/Caixa): abertura + suprimento + vendas − compras − coleta
+function conferenciaDe(iso) { const v = t => lerValor(t, iso); return Math.max(0, v('abertura') + v('abastecimento') + lerDia(iso).centavos - v('saidas') - v('coleta')); }
+// Ao abrir um dia, a abertura de caixa vem sozinha da Conferência/Caixa do dia anterior (funciona mesmo sem abrir o
+// dia anterior antes). Só troca a abertura se ela está vazia ou foi o app que pôs ('abauto-AAAA-MM-DD'; a versão
+// antiga punha a coleta do dia anterior). Abertura digitada ('abmanual-AAAA-MM-DD') ou de antes desta versão fica.
+function puxarAbertura(iso) {
+  if (lerValor('abmanual', iso)) return;
+  const ontem = somaDiasISO(iso, -1), v = conferenciaDe(ontem), atual = lerValor('abertura', iso), auto = lerValor('abauto', iso);
+  if (atual && atual !== auto && !(!auto && atual === lerValor('coleta', ontem))) return;
+  if (v !== atual) gravarValor('abertura', iso, v);
+  gravarValor('abauto', iso, v);
 }
 // Botão que pede um segundo toque em até 4 s antes de agir (evita zerar sem querer)
 function botaoConfirma(texto, acao) {
@@ -1140,14 +1147,16 @@ if (/[?&]teste\b/.test(location.search)) {
   const qf = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1, dinheiro: 2 } }, { hora: '11:00:00', formas: { pix: 3 } }]]]);
   const qz = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1 } }, { hora: '11:00:00', formas: { pix: 3 } }]]], marcoDesde({ quando: '07/07/1999 10:00' }));
   ok(qf.pix === 2 && qf.dinheiro === 1 && !qf.debito && qz.pix === 1, 'quantidade de comandas por forma, e só depois de zerar');
-  passarParaAmanha('1999-10-10', 39000); const a1 = lerValor('abertura', '1999-10-11');
-  passarParaAmanha('1999-10-10', 41000); const a2 = lerValor('abertura', '1999-10-11');
-  gravarValor('abertura', '1999-10-11', 50000); passarParaAmanha('1999-10-10', 42000); const a3 = lerValor('abertura', '1999-10-11');
-  gravarValor('abertura', '1999-10-11', 0); gravarValor('transf', '1999-10-10', 0);
-  gravarValor('coleta', '1999-10-20', 20000); gravarValor('abertura', '1999-10-21', 20000); // como a versão antiga deixava
-  passarParaAmanha('1999-10-20', 39000); const a4 = lerValor('abertura', '1999-10-21');
-  for (const [t, d] of [['coleta', '1999-10-20'], ['abertura', '1999-10-21'], ['transf', '1999-10-20']]) gravarValor(t, d, 0);
-  ok(a1 === 39000 && a2 === 41000 && a3 === 50000 && a4 === 39000, 'conferência/caixa vira a abertura do dia seguinte (troca a coleta antiga, respeita a abertura digitada)');
+  // Dia 10: abertura 500, vendas 850, compras 650, coleta 200 → Conferência/Caixa 500
+  zerarDia('1999-10-10'); somarDia('1999-10-10', { pix: 85000 });
+  gravarValor('abertura', '1999-10-10', 50000); gravarValor('saidas', '1999-10-10', 65000); gravarValor('coleta', '1999-10-10', 20000);
+  gravarValor('abertura', '1999-10-11', 20000); // valor antigo (da versão que passava a coleta)
+  puxarAbertura('1999-10-11'); const a1 = lerValor('abertura', '1999-10-11');
+  gravarValor('saidas', '1999-10-10', 60000); puxarAbertura('1999-10-11'); const a2 = lerValor('abertura', '1999-10-11');
+  gravarValor('abmanual', '1999-10-11', 1); gravarValor('abertura', '1999-10-11', 12300); puxarAbertura('1999-10-11'); const a3 = lerValor('abertura', '1999-10-11');
+  gravarValor('abertura', '1999-10-10', 50000); puxarAbertura('1999-10-10'); const a4 = lerValor('abertura', '1999-10-10'); // digitada antes desta versão
+  zerarDia('1999-10-10'); for (const [t, d] of [['abertura', '1999-10-10'], ['saidas', '1999-10-10'], ['coleta', '1999-10-10'], ['abertura', '1999-10-11'], ['abmanual', '1999-10-11'], ['abauto', '1999-10-11'], ['abauto', '1999-10-10']]) gravarValor(t, d, 0);
+  ok(conferenciaDe('1999-10-09') === 0 && a1 === 50000 && a2 === 55000 && a3 === 12300 && a4 === 50000, 'abertura vem da Conferência/Caixa do dia anterior (troca o valor antigo da coleta, respeita a abertura digitada)');
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
