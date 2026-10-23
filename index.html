@@ -174,7 +174,7 @@ ul.barras li.empty { display: block }
       <section class="panel oliva" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul><div class="acoes" id="acoes-dia"></div></section>
       <section class="panel oliva" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul><div class="acoes" id="acoes-mes"></div></section>
     </div>
-    <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul></section>
+    <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul><div class="acoes" id="acoes-mesbarra"></div></section>
     <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
   </section>
   <div class="dica" id="dica" role="tooltip" hidden></div>
@@ -558,7 +558,7 @@ function guardarComanda(iso, c) {
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
 // Zerar um quadro sem apagar nada: guarda quanto ele tinha naquele momento (o "marco") e o quadro mostra só o que entrou depois.
-// Chaves: 'mes-AAAA-MM' (Porcentagem do mês), 'res-dia-AAAA-MM-DD' e 'res-mes-AAAA-MM' (aba Resultados)
+// Chaves: 'mes-AAAA-MM' (Porcentagem do mês), 'res-dia-AAAA-MM-DD', 'res-mes-AAAA-MM' e 'res-mesbarra-AAAA-MM' (aba Resultados)
 const memoriaMarco = {};
 const chaveMarco = c => 'bookafe-zero-' + c;
 function lerMarco(c) {
@@ -941,13 +941,16 @@ function renderResultados() {
   $('h-res-mes').textContent = `Resultado de ${nomeMes}`;
   $('h-dias').textContent = `Mês de ${nomeMes}`;
   // Uma linha só para o mês inteiro (De 01 à último dia): barra dividida pelas formas; a dica traz as formas e a escala dia a dia
-  const ultimo = String(new Date(+ano, +mm, 0).getDate()), ksMes = [...Object.keys(PAGAMENTOS), ''].filter(k => rMes.formas[k]);
+  // Este quadro tem o seu próprio Zerar (marco 'res-mesbarra-AAAA-MM'), igual ao do Resultado do mês
+  const zBar = lerMarco('res-mesbarra-' + mes), rB = zBar ? descontarZero(rMes, zBar) : rMes;
+  const ultimo = String(new Date(+ano, +mm, 0).getDate()), ksMes = [...Object.keys(PAGAMENTOS), ''].filter(k => rB.formas[k]);
   // A barra enche com os dias que já passaram: mês atual = hoje ÷ último dia; mês passado = cheia; mês futuro = vazia
   const hoje = hojeISO(), fracao = mes < hoje.slice(0, 7) ? 1 : mes > hoje.slice(0, 7) ? 0 : +hoje.slice(8) / +ultimo;
-  $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rMes.centavos, ksMes.map(k => [CLASSE_FORMA[k], rMes.formas[k] / rMes.centavos * fracao * 100]),
-    `De 01 à ${ultimo}/${mm}: dia ${Math.round(fracao * ultimo)} de ${ultimo} (${pct(fracao, 1)} do mês) · ${rMes.comandas} comanda${rMes.comandas === 1 ? '' : 's'} · ${fmt(rMes.centavos)}\n`
-      + ksMes.map(k => `${nomeForma(k)}: ${pct(rMes.formas[k], rMes.centavos)} (${fmt(rMes.formas[k])})`).join('\n')
-      + escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rMes.centavos)));
+  $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rB.centavos, ksMes.map(k => [CLASSE_FORMA[k], rB.formas[k] / rB.centavos * fracao * 100]),
+    `De 01 à ${ultimo}/${mm}: dia ${Math.round(fracao * ultimo)} de ${ultimo} (${pct(fracao, 1)} do mês) · ${rB.comandas} comanda${rB.comandas === 1 ? '' : 's'} · ${fmt(rB.centavos)}\n`
+      + ksMes.map(k => `${nomeForma(k)}: ${pct(rB.formas[k], rB.centavos)} (${fmt(rB.formas[k])})`).join('\n')
+      + (zBar ? `\nContando desde que foi zerado (${zBar.quando})` : escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rB.centavos))));
+  acoes($('acoes-mesbarra'), 'res-mesbarra-' + mes, rMes, zBar, 'resultado do mês');
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque, nas duas abas (quadro Total e Resultados)
