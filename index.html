@@ -238,6 +238,7 @@ ul.barras li.empty { display: block }
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abertura" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abertura-err abertura-hint"></div>
           <div class="err" id="abertura-err"></div>
           <div class="hint" id="abertura-hint">Vem sozinha da Conferência/Caixa do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
+          <div id="abertura-zerar"></div>
         </div>
         <div class="field">
           <label for="abastecimento">Suprimento/Retirada</label>
@@ -645,7 +646,8 @@ function mostraValoresDia() {
   puxarAbertura($('data').value || hojeISO());
   for (const tipo of VALORES_DIA) {
     const c = lerValor(tipo, $('data').value || hojeISO());
-    $(tipo).value = c ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
+    const zerada = tipo === 'abertura' && lerValor('abmanual', $('data').value || hojeISO()); // zerada de propósito: mostra 0,00
+    $(tipo).value = c || zerada ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
   }
 }
 // Senha de quem fecha a conta: só números; com 4 dígitos mostra o nome ou avisa que não existe
@@ -811,6 +813,12 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`;
 }), { className: 'btn' }));
+// Abertura errada (a mais ou a menos): zera com a senha da Pilar ou da Solange e fica zerada (não volta a vir do dia anterior)
+function zerarAbertura(iso) { gravarValor('abertura', iso, 0); gravarValor('abmanual', iso, 1); }
+$('abertura-zerar').append(botaoSupervisor('Zerar abertura de caixa', op => {
+  const iso = $('data').value || hojeISO(); zerarAbertura(iso); mostraValoresDia(); calcular();
+  avisar(`Abertura de caixa de ${dataBR(iso)} zerada por ${op}. Se precisar, digite o valor certo.`, 8000);
+}));
 // Limpar o dia (ex.: depois de testes): apaga deste navegador tudo da data escolhida; os arquivos da pasta ficam
 function limparDia(iso) {
   zerarDia(iso); for (const t of [...VALORES_DIA, 'abmanual', 'abauto']) gravarValor(t, iso, 0);
@@ -1306,6 +1314,10 @@ if (/[?&]teste\b/.test(location.search)) {
     gravarValor('saidas', '1999-08-08', 500); gravarMovs('1999-08-08', [{ hora: '10:00:00', tipo: 'sup', valor: 100, motivo: 't', por: 'Kelly' }]); somarDia('1999-08-08', { pix: 100 });
     limparDia('1999-08-08'); const limpo = !temMovimento('1999-08-08') && !lerMovs('1999-08-08').length && !lerDia('1999-08-08').comandas;
     limparDia('1999-08-06');
+    // Zerar a abertura: fica 0 mesmo com o dia anterior tendo sobra; Limpar o dia volta ao automático
+    somarDia('1999-08-06', { dinheiro: 5000 }); zerarAbertura('1999-08-07'); puxarAbertura('1999-08-07'); const zer = lerValor('abertura', '1999-08-07');
+    limparDia('1999-08-07'); puxarAbertura('1999-08-07'); const volta = lerValor('abertura', '1999-08-07'); limparDia('1999-08-07'); limparDia('1999-08-06');
+    ok(zer === 0 && volta === 5000, 'zerar abertura fica em 0 (não puxa do dia anterior); limpar o dia volta ao automático');
     ok(pulo === 40000 && limpo && !temMovimento('1999-08-06'), 'dia sem movimento é pulado na abertura; Limpar o dia apaga comandas, caixa e lançamentos da data');
   }
   { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
