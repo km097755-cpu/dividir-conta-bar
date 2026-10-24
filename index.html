@@ -778,10 +778,8 @@ function renderTotais() {
   const co = lerValor('coleta', iso), din = f.dinheiro || 0, caixa = ab + abs + din - sa;
   const comDica = (el, dica) => { el.tabIndex = 0; el.dataset.dica = dica; return el; };
   $('fechamento').replaceChildren(
-    comDica(linha('Total', dia.centavos, 'geral'), `Total vendido no dia (todas as formas): ${fmt(dia.centavos)}`),
-    comDica(linha('PIX e cartão (vai para a conta, não fica na gaveta)', dia.centavos - din), `Vendas ${fmt(dia.centavos)} − vendas em dinheiro ${fmt(din)}`),
-    comDica(linha('Dinheiro no caixa (pagamentos ou compras)', caixa, 'destaque'), `Só o dinheiro da gaveta: abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas em dinheiro ${fmt(din)} − pagamentos ou compras ${fmt(sa)}`),
-    linha('Total na gaveta', caixa - co, 'geral dia destaque'));
+    comDica(linha('Total', dia.centavos, 'geral'), `Total vendido no dia (todas as formas): ${fmt(dia.centavos)}`));
+  // PIX e cartão, Dinheiro no caixa e Total na gaveta saíram da tela a pedido do Kleber; seguem no arquivo do Finalizar o dia
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
@@ -1418,7 +1416,7 @@ if (/[?&]teste\b/.test(location.search)) {
     lancarDiferenca(g, 0, 'Pilar'); const naoRepete = lerMovs(g).length === 1;
     delete OPERADORES[hashSenha('0003')]; delete OPERADORES[hashSenha('0004')]; $('data').value = dataT; calcular();
     fechamentoDoDia(g, false).then(arqG => {
-      ok(amanha === 12000 && telaG.includes(fmt(5500)) && telaG.includes(fmt(14000)) && telaG.includes(fmt(12000))
+      ok(amanha === 12000 && telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta')
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
          && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
