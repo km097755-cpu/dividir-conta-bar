@@ -265,18 +265,13 @@ ul.barras li.empty { display: block }
           <div class="hint" id="total-caixa-hint">Abertura + suprimento/retirada (calculado sozinho).</div>
         </div>
        </div>
-       <h2 id="h-conta">Conta</h2>
+       <h2 id="h-conta">Fechar comanda</h2>
        <div class="panel">
-        <div class="field">
-          <label for="senha">Senha de quem fecha a conta (4 dígitos)</label>
-          <input type="password" id="senha" class="plain" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="••••" required aria-describedby="senha-err senha-hint">
-          <div class="err" id="senha-err"></div>
-          <div class="hint" id="senha-hint">Obrigatória para finalizar a comanda. Só quem tem senha cadastrada pode fechar a conta.</div>
-        </div>
         <div class="field">
           <label for="total">Total da conta</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="total" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="total-err"></div>
           <div class="err" id="total-err"></div>
+          <div class="hint" id="quem-fecha" aria-live="polite"></div>
         </div>
         <div class="field">
           <span class="field-title">Pasta das comandas</span>
@@ -693,15 +688,16 @@ function mostraValoresDia() {
     $(tipo).value = c || zerada ? reais(c) : ''; $(tipo).setAttribute('aria-invalid', 'false'); $(tipo + '-err').textContent = '';
   }
 }
-// Senha de quem fecha a conta: só números; com 4 dígitos mostra o nome ou avisa que não existe
-const SENHA_DICA = 'Digite uma vez: vale para as próximas comandas até trocar de pessoa ou fechar o app. Só quem tem senha cadastrada pode fechar a conta.';
-$('senha').addEventListener('input', () => {
-  const e = $('senha'); e.value = e.value.replace(/\D/g, '').slice(0, 4);
-  const op = operadorDa(e.value), errado = e.value.length === 4 && !op;
-  e.setAttribute('aria-invalid', errado ? 'true' : 'false');
-  $('senha-err').textContent = errado ? 'Senha não encontrada.' : '';
-  $('senha-hint').textContent = op ? `Fechando a conta: ${op}. A senha fica guardada para as próximas comandas; para trocar de pessoa, apague e digite outra.` : SENHA_DICA;
-});
+// Quem fecha a conta: a senha é pedida uma vez, no primeiro "Finalizar"; o nome fica só na memória da página
+// (vale para as próximas comandas até tocar em "Trocar pessoa" ou fechar o app)
+let quemFecha = null;
+function mostraQuemFecha() {
+  const qf = $('quem-fecha'); qf.replaceChildren();
+  if (!quemFecha) return qf.append('A senha de quem fecha a conta é pedida uma vez, no primeiro "Finalizar".');
+  const troca = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Trocar pessoa' });
+  troca.addEventListener('click', () => { quemFecha = null; mostraQuemFecha(); });
+  qf.append(`Fechando a conta: ${quemFecha}. `, troca);
+}
 // Só atualiza os quadros Total e Fechamento do dia; a comanda aberta não muda
 for (const tipo of VALORES_DIA) $(tipo).addEventListener('input', () => {
   const t = $(tipo).value.trim(), v = t === '' ? 0 : parseValor(t), ruim = v === null || v > MAX_CENTS;
@@ -962,15 +958,29 @@ function calcularResultado() {
     <div class="breakdown"><div><span>${pessoas.length} pagamento${pessoas.length === 1 ? '' : 's'}</span><span></span></div></div>
     <ul class="rows"></ul>
     ${situacao}
-    <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
-  $('copiar-planilha').addEventListener('click', async () => {
+    <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>
+    <div id="pedir-senha"></div>`;
+  // Pede a senha de 4 dígitos (uma vez só) embaixo do botão Finalizar; senha certa guarda o nome e finaliza
+  const pedirSenha = () => {
+    const qf = $('pedir-senha'); qf.className = 'liberar'; qf.replaceChildren();
+    const inp = Object.assign(document.createElement('input'), { type: 'password', inputMode: 'numeric', maxLength: 4, autocomplete: 'off', placeholder: '••••', className: 'plain' });
+    inp.setAttribute('aria-label', 'Senha de quem fecha a conta (4 dígitos)');
+    const ok = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Confirmar' });
+    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: 'Senha de quem fecha a conta (4 dígitos), pedida uma vez só' });
+    msg.setAttribute('role', 'alert');
+    const tentar = () => { const op = operadorDa(inp.value); if (!op) { msg.textContent = 'Senha errada.'; inp.value = ''; return inp.focus(); } quemFecha = op; mostraQuemFecha(); finalizar(op); };
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tentar(); } });
+    ok.addEventListener('click', tentar);
+    qf.append(inp, ok, msg); inp.focus();
+  };
+  $('copiar-planilha').addEventListener('click', () => {
     if (finalizando) return; // dois toques rápidos não lançam a mesma comanda duas vezes
-    // Só fecha a conta com a senha de 4 dígitos de quem tem cadastro
-    const op = operadorDa($('senha').value);
-    if (!op) {
-      $('senha').setAttribute('aria-invalid', 'true'); $('senha-err').textContent = 'Digite a senha de 4 dígitos de quem está fechando a conta.';
-      $('senha').scrollIntoView({ block: 'center' }); $('senha').focus(); return;
-    }
+    if (!quemFecha) return pedirSenha(); // só fecha a conta com a senha de quem tem cadastro
+    finalizar(quemFecha);
+  });
+  async function finalizar(op) {
+    if (finalizando) return;
     const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
     finalizando = true;
     let onde, ok;
@@ -985,7 +995,7 @@ function calcularResultado() {
     novaComanda();
     avisar(`Comanda das ${hora} (fechada por ${op}) copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
       + (r.falta ? ` Atenção: ficou faltando ${fmt(r.falta)}.` : r.troco ? ` Troco: ${fmt(r.troco)}.` : ''), 12000);
-  });
+  }
   const ul = out.querySelector('.rows');
   pessoas.forEach((p, i) => {
     const li = document.createElement('li');
@@ -1025,7 +1035,7 @@ $('form-add').addEventListener('submit', e => {
   pessoas.push({ nome: '', valor, pag: $('nova-pag').value }); el.value = ''; $('nova-pag').value = ''; renderLista(); calcular(); el.focus();
 });
 
-renderLista(); calcular();
+renderLista(); calcular(); mostraQuemFecha();
 
 // ===================== Resultados (dashboard do dia e do mês) =====================
 const FORMA_DO_TEXTO = { 'PIX': 'pix', 'Débito': 'debito', 'Crédito': 'credito', 'Dinheiro': 'dinheiro', 'Sem forma': '' };
@@ -1463,15 +1473,9 @@ if (/[?&]teste\b/.test(location.search)) {
       limparDia(g); limparDia(diaSeguinte(g));
     });
   }
-  { // Senha de quem fecha: pedida uma vez, continua depois de abrir a comanda nova
-    OPERADORES[hashSenha('0005')] = 'Andrea'; $('senha').value = '0005'; $('senha').dispatchEvent(new Event('input'));
-    novaComanda(); const ficou = $('senha').value === '0005' && $('senha-hint').textContent.startsWith('Fechando a conta: Andrea');
-    delete OPERADORES[hashSenha('0005')]; $('senha').value = ''; $('senha').dispatchEvent(new Event('input'));
-    ok(ficou, 'senha de quem fecha a conta é pedida uma vez e continua na comanda nova');
-  }
   { // Enter passa para o próximo campo: senha → total da conta → valor do pagamento → forma de pagamento
     const enter = el => { el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return document.activeElement.id; };
-    const ordem = [enter($('senha')), enter($('total')), enter($('novo-valor')), enter($('coleta'))];
+    const ordem = [enter($('abertura')), enter($('total')), enter($('novo-valor')), enter($('coleta'))];
     ok(ordem.join() === 'total,novo-valor,nova-pag,contado-notas', 'Enter num campo passa para o próximo campo: ' + ordem.join());
     document.activeElement.blur();
   }
@@ -1488,6 +1492,20 @@ if (/[?&]teste\b/.test(location.search)) {
       async getFile() { return { text: async () => txt }; }, async createWritable() { let b = ''; return { write: async t => { b += t; }, close: async () => { txt = b; } }; } }); } return filhos.get(n); },
     async *entries() { yield* filhos.entries(); } }; };
   (async () => {
+    { // Fechar comanda: a senha é pedida uma vez (no primeiro Finalizar) e vale para as próximas (arquivo e cópia de mentira)
+      const sv = salvarCopia, ct = copiarTexto, dataF = $('data').value, antes = pessoas; salvarCopia = async () => 'teste'; copiarTexto = async () => true;
+      OPERADORES[hashSenha('0005')] = 'Andrea'; quemFecha = null; $('data').value = '1999-09-09'; zerarDia('1999-09-09');
+      const comanda = async v => { $('total').value = v; pessoas = [{ nome: '', valor: null, pag: 'pix' }]; calcular(); $('copiar-planilha').click(); await new Promise(r => setTimeout(r, 30)); };
+      await comanda('10,00'); const pediu = !!$('pedir-senha').querySelector('input');
+      const qi = $('pedir-senha'); qi.querySelector('input').value = '9999'; qi.querySelector('.btn').click(); const errada = qi.querySelector('small').textContent;
+      qi.querySelector('input').value = '0005'; qi.querySelector('.btn').click(); await new Promise(r => setTimeout(r, 30));
+      const d1 = lerDia('1999-09-09').comandas, mostra = $('quem-fecha').textContent;
+      await comanda('20,00'); const d2 = lerDia('1999-09-09'), semPedir = !document.querySelector('#pedir-senha input');
+      $('quem-fecha').querySelector('button').click(); const trocou = quemFecha === null && $('quem-fecha').textContent.includes('pedida uma vez');
+      zerarDia('1999-09-09'); delete OPERADORES[hashSenha('0005')]; salvarCopia = sv; copiarTexto = ct; $('data').value = dataF; pessoas = antes; novaComanda();
+      ok(pediu && errada === 'Senha errada.' && d1 === 1 && mostra.includes('Fechando a conta: Andrea') && d2.comandas === 2 && d2.centavos === 3000 && semPedir && trocou,
+        'fechar comanda: senha pedida uma vez no primeiro Finalizar, vale para as próximas e dá para trocar de pessoa');
+    }
     // Suprimento/Retirada: lançamentos com senha de colaborador; o saldo vai para o caixa (teste com senha de mentira)
     gravarValor('abastecimento', '1999-05-05', 30000); const legado = lerMovs('1999-05-05');
     gravarMovs('1999-05-05', [...legado, { hora: '10:00:00', tipo: 'ret', valor: 5000, motivo: 'gás', por: 'Kelly' }]);
