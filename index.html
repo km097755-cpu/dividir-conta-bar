@@ -308,7 +308,8 @@ ul.barras li.empty { display: block }
       <h2 id="h-fechamento">Fechamento do dia</h2>
       <div class="panel" aria-labelledby="h-fechamento">
         <div class="totais" id="fech-topo" aria-live="polite"></div>
-        <div class="field">
+        <!-- Campo Saídas escondido a pedido do Kleber (dinheiro que sai do caixa: Retirada); a conta continua usando o valor guardado -->
+        <div class="field" hidden>
           <label for="saidas">Saídas</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
           <div class="err" id="saidas-err"></div>
@@ -787,7 +788,8 @@ function renderTotais() {
   const comDica = (el, dica) => { el.tabIndex = 0; el.dataset.dica = dica; return el; };
   // Total das vendas, PIX e cartão, Dinheiro no caixa e Total na gaveta saíram da tela a pedido do Kleber;
   // as contas são as mesmas e essas linhas seguem no arquivo do Finalizar o dia
-  $('fechamento').replaceChildren();
+  // Saídas digitadas antes de o campo sair da tela continuam na conta: aparecem aqui só se houver valor no dia
+  $('fechamento').replaceChildren(...(sa ? [comDica(linha('Saídas (lançadas antes)', sa), 'Para dinheiro que sai do caixa, use Retirada na aba Suprimento/Retirada')] : []));
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
@@ -1448,7 +1450,7 @@ if (/[?&]teste\b/.test(location.search)) {
     lancarDiferenca(g, 0, 'Pilar'); const naoRepete = lerMovs(g).length === 1;
     delete OPERADORES[hashSenha('0003')]; delete OPERADORES[hashSenha('0004')]; $('data').value = dataT; calcular();
     fechamentoDoDia(g, false).then(arqG => {
-      ok(amanha === 12000 && !telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta')
+      ok(amanha === 12000 && !telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
          && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
@@ -1469,8 +1471,8 @@ if (/[?&]teste\b/.test(location.search)) {
   }
   { // Enter passa para o próximo campo: senha → total da conta → valor do pagamento → forma de pagamento
     const enter = el => { el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return document.activeElement.id; };
-    const ordem = [enter($('senha')), enter($('total')), enter($('novo-valor')), enter($('saidas'))];
-    ok(ordem.join() === 'total,novo-valor,nova-pag,coleta', 'Enter num campo passa para o próximo campo: ' + ordem.join());
+    const ordem = [enter($('senha')), enter($('total')), enter($('novo-valor')), enter($('coleta'))];
+    ok(ordem.join() === 'total,novo-valor,nova-pag,contado-notas', 'Enter num campo passa para o próximo campo: ' + ordem.join());
     document.activeElement.blur();
   }
   { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
