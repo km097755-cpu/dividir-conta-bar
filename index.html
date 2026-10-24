@@ -67,6 +67,9 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
+.trava { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: grid; place-items: center; padding: 16px } /* tela de abrir o caixa */
+.trava-caixa { width: min(380px, 100%); display: grid; gap: 12px }
+.trava-caixa input { font: inherit; color: var(--ink); background: var(--bg); padding: 10px 12px; width: 100% }
 .totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
 #contagens .falta span:last-child, #contado-previa .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
 #contagens .liberar { justify-content: flex-start } #contagens .liberar small { text-align: left }
@@ -238,7 +241,7 @@ ul.barras li.empty { display: block }
   <div class="grid" id="tela-comanda" role="tabpanel" aria-labelledby="aba-comanda">
     <section aria-labelledby="h-caixa">
       <form class="blocos" id="form-conta" novalidate>
-       <h2 id="h-caixa">Caixa</h2>
+       <h2 id="h-caixa">Caixa aberto</h2>
        <div class="panel">
         <div class="field">
           <label for="data">Data</label>
@@ -252,7 +255,8 @@ ul.barras li.empty { display: block }
           <div class="hint" id="abertura-hint">Vem sozinha do Total do fechamento (dinheiro da gaveta) do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
           <div id="abertura-zerar"></div>
         </div>
-        <div class="field">
+        <!-- Suprimento/Retirada escondido do quadro a pedido do Kleber (lança-se na aba Suprimento/Retirada); o campo continua no código -->
+        <div class="field" hidden>
           <label for="abastecimento">Suprimento/Retirada</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abastecimento" readonly placeholder="0,00" aria-describedby="abastecimento-err abastecimento-hint"></div>
           <div class="err" id="abastecimento-err"></div>
@@ -343,6 +347,17 @@ ul.barras li.empty { display: block }
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
       <div class="panel" id="teste" hidden></div>
     </section>
+  </div>
+</div>
+
+<!-- Ao abrir o app: tela para abrir o caixa com a senha de um colaborador (quem abre já fica como quem fecha as contas) -->
+<div class="trava" id="trava" role="dialog" aria-modal="true" aria-labelledby="trava-titulo" hidden>
+  <div class="panel trava-caixa">
+    <h2 id="trava-titulo">Bookafé — abrir o caixa</h2>
+    <p class="hint">Digite a senha de 4 dígitos de um colaborador: Pilar, Kelly, Kleber, Andrea ou Solange.</p>
+    <input type="password" id="trava-senha" class="plain" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••" aria-label="Senha de 4 dígitos">
+    <button type="button" class="btn" id="trava-abrir">Abrir</button>
+    <div class="err" id="trava-err" role="alert"></div>
   </div>
 </div>
 
@@ -925,7 +940,7 @@ if ('serviceWorker' in navigator && ((location.protocol === 'https:' && location
 const CAMPOS = 'input[type="text"], input[type="password"], input[type="date"], select';
 document.addEventListener('keydown', e => {
   const el = e.target;
-  if (e.key !== 'Enter' || e.isComposing || !el.matches?.(CAMPOS) || el.matches('select') || el.closest('.liberar')) return;
+  if (e.key !== 'Enter' || e.isComposing || !el.matches?.(CAMPOS) || el.matches('select') || el.closest('.liberar, #trava')) return;
   if (el.id === 'contado-senha') { e.preventDefault(); return $('contar').click(); }
   const campos = [...document.querySelectorAll(CAMPOS)].filter(c => !c.readOnly && !c.disabled && c.offsetParent !== null && !c.closest('.liberar'));
   const prox = campos[campos.indexOf(el) + 1];
@@ -1036,6 +1051,20 @@ $('form-add').addEventListener('submit', e => {
 });
 
 renderLista(); calcular(); mostraQuemFecha();
+
+// Abrir o caixa: o app abre travado e só libera com a senha de um colaborador; quem abre já fica como quem fecha as contas.
+// Fica só na memória da página: fechar ou recarregar o app pede a senha de novo.
+function travar() { $('trava').hidden = false; document.querySelector('.wrap').inert = true; $('trava-senha').value = ''; $('trava-err').textContent = ''; $('trava-senha').focus(); }
+function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); }
+function tentarAbrir() {
+  const op = operadorDa($('trava-senha').value);
+  if (!op) { $('trava-err').textContent = 'Senha errada.'; $('trava-senha').value = ''; return $('trava-senha').focus(); }
+  destravar(op); avisar(`Caixa aberto por ${op}.`, 5000);
+}
+$('trava-senha').addEventListener('input', () => { $('trava-senha').value = $('trava-senha').value.replace(/\D/g, '').slice(0, 4); });
+$('trava-senha').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tentarAbrir(); } });
+$('trava-abrir').addEventListener('click', tentarAbrir);
+travar();
 
 // ===================== Resultados (dashboard do dia e do mês) =====================
 const FORMA_DO_TEXTO = { 'PIX': 'pix', 'Débito': 'debito', 'Crédito': 'credito', 'Dinheiro': 'dinheiro', 'Sem forma': '' };
@@ -1324,6 +1353,14 @@ $('res-copias').addEventListener('click', async () => {
 if (/[?&]teste\b/.test(location.search)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
   const soma = a => a.reduce((x, y) => x + y, 0);
+  { // Abrir o caixa: o app abre travado; senha errada não abre; senha de colaborador abre e já fica como quem fecha
+    travar(); const travado = !$('trava').hidden && document.querySelector('.wrap').inert;
+    OPERADORES[hashSenha('0006')] = 'Kelly';
+    $('trava-senha').value = '9999'; tentarAbrir(); const errada = $('trava-err').textContent === 'Senha errada.' && !$('trava').hidden;
+    $('trava-senha').value = '0006'; tentarAbrir(); const aberto = $('trava').hidden && !document.querySelector('.wrap').inert && quemFecha === 'Kelly' && $('quem-fecha').textContent.includes('Kelly');
+    delete OPERADORES[hashSenha('0006')]; quemFecha = null; mostraQuemFecha();
+    ok(travado && errada && aberto, 'app abre travado e só abre o caixa com a senha de um colaborador (que já fica como quem fecha)');
+  }
   let r = dividir(10000, 3);
   ok(r.total === 10000 && soma(r.partes) === 10000, 'R$100 entre 3 soma R$100,00');
   ok(JSON.stringify(r.partes) === '[3334,3333,3333]', 'sobra de centavos vai para os primeiros: ' + r.partes);
