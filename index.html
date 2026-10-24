@@ -240,7 +240,7 @@ ul.barras li.empty { display: block }
           <label for="abertura">Abertura de caixa</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="abertura" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="abertura-err abertura-hint"></div>
           <div class="err" id="abertura-err"></div>
-          <div class="hint" id="abertura-hint">Vem sozinha da Conferência/Caixa do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
+          <div class="hint" id="abertura-hint">Vem sozinha do Total do fechamento (dinheiro da gaveta) do dia anterior. Se digitar, vale o que você digitou (apague para voltar ao automático). Não entra no total vendido.</div>
           <div id="abertura-zerar"></div>
         </div>
         <div class="field">
@@ -783,7 +783,7 @@ function renderTotais() {
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
-  $('pos-coleta').replaceChildren(Object.assign(linha('Conferência/Caixa', caixa - co, 'geral dia destaque'), { tabIndex: 0 }));
+  $('pos-coleta').replaceChildren(Object.assign(linha('Total', caixa - co, 'geral dia destaque'), { tabIndex: 0 })); // antes "Conferência/Caixa"
   $('pos-coleta').lastChild.dataset.dica = `Dinheiro da gaveta: abertura + suprimento/retirada + vendas em dinheiro − compras − coleta (PIX e cartão não entram)\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
   // Cada contagem: hora, quem, quanto contou e, à direita, a diferença com sinal (+ sobrou, − faltou)
@@ -799,7 +799,7 @@ function renderTotais() {
     }));
     return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
   }));
-  $('contado-hint').textContent = `Esperado na gaveta agora (Conferência/Caixa): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
+  $('contado-hint').textContent = `Esperado na gaveta agora (Total acima): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
   previaContagem();
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
@@ -889,7 +889,7 @@ function previaContagem() {
   const mk = (a, b, cls) => { const el = document.createElement('div'); if (cls) el.className = cls; el.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: b })); return el; };
   if (c.vazio || !c.ok) return $('contado-previa').replaceChildren();
   $('contado-previa').replaceChildren(mk('Notas', fmt(c.notas)), mk('Moedas', fmt(c.moedas)), mk('Contado (notas + moedas)', fmt(c.total), 'geral'),
-    mk('Conferência/Caixa', fmt(esp)), mk(difTxt(d), d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0), d < 0 ? 'falta' : d > 0 ? 'sobra' : ''));
+    mk('Total (esperado na gaveta)', fmt(esp)), mk(difTxt(d), d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0), d < 0 ? 'falta' : d > 0 ? 'sobra' : ''));
 }
 for (const id of ['contado-notas', 'contado-moedas']) $(id).addEventListener('input', previaContagem);
 $('contar').addEventListener('click', () => {
@@ -902,6 +902,19 @@ $('contar').addEventListener('click', () => {
   gravarContagens(iso, [...lerContagens(iso), { hora: horaAgora(), contado: c.total, notas: c.notas, moedas: c.moedas, esperado, por: op }]);
   $('contado-notas').value = ''; $('contado-moedas').value = ''; $('contado-senha').value = ''; renderTotais();
   avisar(`Contagem registrada por ${op}: ${difTxt(c.total - esperado)}.`, 8000);
+});
+// Enter num campo passa para o próximo campo da tela. No último campo de um formulário com botão (ex.: Lançar) o Enter envia;
+// na senha de quem contou, registra a contagem; as senhas dos botões com senha continuam com o Enter delas.
+const CAMPOS = 'input[type="text"], input[type="password"], input[type="date"], select';
+document.addEventListener('keydown', e => {
+  const el = e.target;
+  if (e.key !== 'Enter' || e.isComposing || !el.matches?.(CAMPOS) || el.matches('select') || el.closest('.liberar')) return;
+  if (el.id === 'contado-senha') { e.preventDefault(); return $('contar').click(); }
+  const campos = [...document.querySelectorAll(CAMPOS)].filter(c => !c.readOnly && !c.disabled && c.offsetParent !== null && !c.closest('.liberar'));
+  const prox = campos[campos.indexOf(el) + 1];
+  if (el.form?.querySelector('[type="submit"]') && (!prox || prox.form !== el.form)) return; // último campo: Enter envia o formulário
+  e.preventDefault();
+  if (prox) { prox.focus(); if (prox.type === 'text' || prox.type === 'password') prox.select(); }
 });
 $('acoes-fechamento').append(botaoSupervisor('Limpar o dia (apagar testes)', op => {
   const iso = $('data').value || hojeISO(); limparDia(iso); mostraValoresDia(); calcular();
@@ -1428,6 +1441,12 @@ if (/[?&]teste\b/.test(location.search)) {
          'lançar a diferença da contagem no caixa (com senha) faz a gaveta bater com o contado, uma vez só');
       limparDia(g); limparDia(diaSeguinte(g));
     });
+  }
+  { // Enter passa para o próximo campo: senha → total da conta → valor do pagamento → forma de pagamento
+    const enter = el => { el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return document.activeElement.id; };
+    const ordem = [enter($('senha')), enter($('total')), enter($('novo-valor')), enter($('saidas'))];
+    ok(ordem.join() === 'total,novo-valor,nova-pag,coleta', 'Enter num campo passa para o próximo campo: ' + ordem.join());
+    document.activeElement.blur();
   }
   { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
     let n = 0; const b = botaoConfirma('X', () => n++); b.click(); b.click(); b.click();
