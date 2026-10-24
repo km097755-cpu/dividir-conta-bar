@@ -61,6 +61,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
 .totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
+#contagens .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap } /* faltou: valor em destaque vermelho */
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
