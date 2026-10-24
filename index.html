@@ -3,6 +3,13 @@
 <title>Bookafé (Comanda)</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Calculadora para dividir a conta do bar em partes iguais, com a forma de pagamento de cada pessoa.">
+<!-- Aplicativo instalável (computador, Android e iPhone): manifesto e service worker só no site (https), ver o script -->
+<meta name="theme-color" content="#8e2a1f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bookafé">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
@@ -168,6 +175,8 @@ ul.barras li.empty { display: block }
   <header>
     <h1>Bookafé (Comanda)</h1>
     <p>Digite a data, a abertura de caixa e o total da conta e registre cada pagamento com o valor e a forma. Pagamento sem valor fica com uma parte igual do que falta. No fim, use "Finalizar e copiar para a planilha" e cole na planilha diária.</p>
+    <button type="button" class="btn-ghost" id="instalar" hidden>Instalar o aplicativo</button>
+    <p class="hint" id="instalar-ios" hidden>Para instalar no iPhone: no Safari, toque em Compartilhar e depois em "Adicionar à Tela de Início".</p>
   </header>
 
   <nav class="abas" role="tablist" aria-label="Telas do app">
@@ -903,6 +912,17 @@ $('contar').addEventListener('click', () => {
   $('contado-notas').value = ''; $('contado-moedas').value = ''; $('contado-senha').value = ''; renderTotais();
   avisar(`Contagem registrada por ${op}: ${difTxt(c.total - esperado)}.`, 8000);
 });
+// Aplicativo instalável (computador, Android e iPhone): só no site do GitHub Pages (ou localhost, para testar);
+// no pen-drive (file://) e no artifact não liga nada. O service worker deixa abrir sem internet.
+if ('serviceWorker' in navigator && ((location.protocol === 'https:' && location.hostname.endsWith('github.io')) || location.hostname === 'localhost')) {
+  document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: 'manifest.webmanifest' }));
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  let pedido = null; // Chrome/Edge/Android: botão "Instalar o aplicativo"
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedido = e; $('instalar').hidden = false; });
+  $('instalar').addEventListener('click', async () => { if (!pedido) return; pedido.prompt(); await pedido.userChoice; pedido = null; $('instalar').hidden = true; });
+  addEventListener('appinstalled', () => { $('instalar').hidden = true; });
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) $('instalar-ios').hidden = false; // iPhone: só pelo Safari
+}
 // Enter num campo passa para o próximo campo da tela. No último campo de um formulário com botão (ex.: Lançar) o Enter envia;
 // na senha de quem contou, registra a contagem; as senhas dos botões com senha continuam com o Enter delas.
 const CAMPOS = 'input[type="text"], input[type="password"], input[type="date"], select';
