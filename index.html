@@ -155,15 +155,17 @@ ul.people .pvalor { font-family: var(--f-num) }
 .card-res span { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700 }
 .card-res strong { font-family: var(--f-num); font-size: clamp(.95rem, 2.6vw, 1.25rem); overflow-wrap: anywhere }
 ul.barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px }
-ul.barras li { display: grid; grid-template-columns: 7em minmax(0, 1fr) 7.5em; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 6px; cursor: default }
+ul.barras li { display: grid; grid-template-columns: 7em minmax(0, 1fr) 4.2em 7.5em; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 6px; cursor: default }
 ul.barras li:hover, ul.barras li:focus-visible, ul.barras li.ativa { background: var(--accent-soft) }
 ul.barras li:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px }
 ul.barras .val { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 700; text-align: right }
 ul.barras li.empty { display: block }
+ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; color: var(--muted); font-size: .9rem } /* % de cada forma */
 @media (max-width: 520px) {
-  ul.barras li { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px }
+  ul.barras li { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 6px }
   ul.barras .trilho { grid-column: 1 / -1; grid-row: 2 }
-  ul.barras .val { grid-column: 2; grid-row: 1 }
+  ul.barras .pc { grid-column: 2; grid-row: 1 }
+  ul.barras .val { grid-column: 3; grid-row: 1 }
 }
 .trilho { height: 12px; border-radius: 999px; background: var(--bg); overflow: hidden; display: flex }
 .trilho i { display: block; height: 100% }
@@ -1143,8 +1145,12 @@ async function carregarResultados(pedirPermissao) {
           if (c) lidas.push(...c); else ignorados++;
         }
         const daPasta = diasDasComandas(lidas);
-        for (const [iso, d] of daPasta) dadosRes.set(iso, d);
+        // Para cada dia vale a fonte com mais comandas: a pasta (pode ter comandas de outro computador) ou o navegador
+        // (tem toda comanda finalizada aqui, mesmo a que foi para Downloads por falta de permissão na pasta)
+        const usaPasta = iso => !nav.has(iso) || daPasta.get(iso).comandas >= nav.get(iso).comandas;
+        for (const [iso, d] of daPasta) if (usaPasta(iso)) dadosRes.set(iso, d);
         for (const c of lidas) { // comandas uma a uma, para o crescimento do dia
+          if (!usaPasta(c.iso)) continue;
           const pago = c.valores.reduce((a, b) => a + b, 0), l = etapasRes.get(c.iso) || [];
           l.push({ hora: c.hora, formas: liquidoPorForma(c.formas, c.valores, Math.max(pago - c.total, 0)) }); etapasRes.set(c.iso, l);
         }
@@ -1168,12 +1174,13 @@ function renderResultados() {
   const cards = (box, r) => box.replaceChildren(...[['Total', fmt(r.centavos)], ['Comandas', String(r.comandas)], ['Ticket médio', fmt(r.comandas ? Math.round(r.centavos / r.comandas) : 0)]]
     .map(([a, b]) => { const d = document.createElement('div'); d.className = 'card-res'; d.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('strong'), { textContent: b })); return d; }));
   // Linha com dica (porcentagem) para o mouse, o teclado e o toque
-  const linha = (rotulo, valor, segmentos, dica) => {
+  const linha = (rotulo, valor, segmentos, dica, pc = '') => {
     const li = document.createElement('li'); li.tabIndex = 0; li.dataset.dica = dica;
     const nome = document.createElement('span'); nome.append(...rotulo);
     const trilho = document.createElement('span'); trilho.className = 'trilho'; trilho.setAttribute('aria-hidden', 'true');
     for (const [cls, w] of segmentos) { const i = document.createElement('i'); i.className = cls; i.style.width = w + '%'; trilho.append(i); }
-    li.append(nome, trilho, Object.assign(document.createElement('span'), { className: 'val', textContent: fmt(valor) }), Object.assign(document.createElement('span'), { className: 'sr', textContent: ' — ' + dica }));
+    li.append(nome, trilho, Object.assign(document.createElement('span'), { className: 'pc', textContent: pc }),
+      Object.assign(document.createElement('span'), { className: 'val', textContent: fmt(valor) }), Object.assign(document.createElement('span'), { className: 'sr', textContent: ' — ' + dica }));
     return li;
   };
   const formas = (box, r, quando, etapas, qtd = {}) => {
@@ -1182,7 +1189,7 @@ function renderResultados() {
       const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
       const n = qtd[k] || 0;
       return linha([bol, `${nomeForma(k)} · ${n}`], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
-        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}\n${n} comanda${n === 1 ? '' : 's'} paga${n === 1 ? '' : 's'} com ${nomeForma(k)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'));
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}\n${n} comanda${n === 1 ? '' : 's'} paga${n === 1 ? '' : 's'} com ${nomeForma(k)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'), pct(v, r.centavos));
     }));
     if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
   };
@@ -1213,7 +1220,8 @@ function renderResultados() {
   $('dias-mes').replaceChildren(linha([`De 01 à ${ultimo}`], rB.centavos, ksMes.map(k => [CLASSE_FORMA[k], rB.formas[k] / rB.centavos * fracao * 100]),
     `De 01 à ${ultimo}/${mm}: dia ${Math.round(fracao * ultimo)} de ${ultimo} (${pct(fracao, 1)} do mês) · ${rB.comandas} comanda${rB.comandas === 1 ? '' : 's'} · ${fmt(rB.centavos)}\n`
       + ksMes.map(k => `${nomeForma(k)}: ${pct(rB.formas[k], rB.centavos)} (${fmt(rB.formas[k])})`).join('\n')
-      + (zBar ? `\nContando desde que foi zerado (${zBar.quando})` : escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rB.centavos))));
+      + (zBar ? `\nContando desde que foi zerado (${zBar.quando})` : escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rB.centavos)),
+    pct(fracao, 1)));
   acoes($('acoes-mesbarra'), 'res-mesbarra-' + mes, rMes, zBar, 'resultado do mês');
 }
 
@@ -1530,6 +1538,17 @@ if (/[?&]teste\b/.test(location.search)) {
       async getFile() { return { text: async () => txt }; }, async createWritable() { let b = ''; return { write: async t => { b += t; }, close: async () => { txt = b; } }; } }); } return filhos.get(n); },
     async *entries() { yield* filhos.entries(); } }; };
   (async () => {
+    { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
+      const pastaR = pastaComandas, d = '1999-06-06', resD = $('res-dia').value; pastaComandas = null; zerarDia(d); $('res-dia').value = d;
+      somarDia(d, { credito: 10000 }); guardarComanda(d, { hora: '10:00:00', formas: { credito: 10000 } }); await carregarResultados(false);
+      const pcs = () => [...$('formas-dia').querySelectorAll('li')].map(li => li.firstChild.textContent + '=' + li.querySelector('.pc').textContent).join('|');
+      const antes = pcs();
+      somarDia(d, { pix: 10000 }); guardarComanda(d, { hora: '11:00:00', formas: { pix: 10000 } }); await carregarResultados(false);
+      const depois = pcs();
+      zerarDia(d); pastaComandas = pastaR; $('res-dia').value = resD;
+      ok(antes.includes('Crédito · 1=100,0%') && depois.includes('PIX · 1=50,0%') && depois.includes('Crédito · 1=50,0%'),
+        'Resultado do dia mostra a % de cada forma e ela muda a cada comanda finalizada');
+    }
     { // Fechar comanda: a senha é pedida uma vez (no primeiro Finalizar) e vale para as próximas (arquivo e cópia de mentira)
       const sv = salvarCopia, ct = copiarTexto, dataF = $('data').value, antes = pessoas; salvarCopia = async () => 'teste'; copiarTexto = async () => true;
       OPERADORES[hashSenha('0005')] = 'Andrea'; quemFecha = null; $('data').value = '1999-09-09'; zerarDia('1999-09-09');
