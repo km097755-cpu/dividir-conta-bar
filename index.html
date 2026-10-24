@@ -57,7 +57,6 @@ section { display: grid; gap: 16px; min-width: 0 }
 h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin: 0 }
 .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700 }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
-.tipos { display: grid; gap: 6px } .tipos label { display: flex; gap: 8px; align-items: center; font-weight: 400 }
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
@@ -181,13 +180,6 @@ ul.barras li.empty { display: block }
         <form class="panel" id="form-mov" novalidate>
           <p class="hint" id="mov-dia"></p>
           <div class="field">
-            <span class="field-title" id="mov-tipo-titulo">Tipo</span>
-            <div class="tipos" role="radiogroup" aria-labelledby="mov-tipo-titulo">
-              <label><input type="radio" name="mov-tipo" value="sup" checked> Suprimento (entra dinheiro no caixa)</label>
-              <label><input type="radio" name="mov-tipo" value="ret"> Retirada (sai dinheiro do caixa)</label>
-            </div>
-          </div>
-          <div class="field">
             <label for="mov-valor">Valor</label>
             <div class="money"><span aria-hidden="true">R$</span><input type="text" id="mov-valor" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
           </div>
@@ -199,6 +191,7 @@ ul.barras li.empty { display: block }
             <label for="mov-senha">S ou R + senha de quem está lançando</label>
             <input type="password" id="mov-senha" class="plain" maxlength="5" autocomplete="off" placeholder="S•••• ou R••••" aria-describedby="mov-senha-hint">
             <div class="hint" id="mov-senha-hint">Digite <strong>S</strong> para Suprimento ou <strong>R</strong> para Retirada e logo depois a senha de 4 dígitos (ex.: S e a senha). Só colaboradores com senha cadastrada podem lançar.</div>
+            <div class="check" id="mov-tipo" aria-live="polite"></div>
           </div>
           <div class="err" id="mov-err" role="alert"></div>
           <div class="check" id="mov-ok" role="status"></div>
@@ -237,7 +230,8 @@ ul.barras li.empty { display: block }
        <div class="panel">
         <div class="field">
           <label for="data">Data</label>
-          <input type="date" id="data" class="plain">
+          <input type="date" id="data" class="plain" aria-describedby="data-aviso">
+          <div class="err" id="data-aviso" role="alert"></div>
         </div>
         <div class="field">
           <label for="abertura">Abertura de caixa</label>
@@ -643,7 +637,11 @@ function lerValor(tipo, iso) {
   return memoriaValor[chaveValor(tipo, iso)] || 0;
 }
 function gravarValor(tipo, iso, c) { memoriaValor[chaveValor(tipo, iso)] = c; try { c ? localStorage.setItem(chaveValor(tipo, iso), String(c)) : localStorage.removeItem(chaveValor(tipo, iso)); } catch {} }
+// Página aberta desde ontem (ou data trocada): avisa para não lançar o dia de hoje na data errada
+const avisoData = () => { const d = $('data').value; $('data-aviso').textContent = d && d !== hojeISO() ? `Atenção: a data do caixa é ${dataBR(d)}, mas hoje é ${dataBR(hojeISO())}. Confira antes de lançar.` : ''; };
+addEventListener('focus', avisoData); document.addEventListener('visibilitychange', avisoData);
 function mostraValoresDia() {
+  avisoData();
   puxarAbertura($('data').value || hojeISO());
   for (const tipo of VALORES_DIA) {
     const c = lerValor(tipo, $('data').value || hojeISO());
@@ -788,9 +786,12 @@ function conferenciaDe(iso) { const v = t => lerValor(t, iso); return Math.max(0
 // Ao abrir um dia, a abertura de caixa vem sozinha da Conferência/Caixa do dia anterior (funciona mesmo sem abrir o
 // dia anterior antes). Só troca a abertura se ela está vazia ou foi o app que pôs ('abauto-AAAA-MM-DD'; a versão
 // antiga punha a coleta do dia anterior). Abertura digitada ('abmanual-AAAA-MM-DD') ou de antes desta versão fica.
+// Dia em que o app não foi aberto (ex.: café fechado) não tem nada guardado: a abertura vem do último dia com movimento (até 31 dias antes)
+function temMovimento(d) { return lerDia(d).comandas > 0 || VALORES_DIA.some(t => lerValor(t, d)); } // function: usada no carregamento, antes desta linha
+function diaAnteriorComMovimento(iso) { let d = somaDiasISO(iso, -1); for (let i = 0; i < 31 && !temMovimento(d); i++) d = somaDiasISO(d, -1); return d; }
 function puxarAbertura(iso) {
   if (lerValor('abmanual', iso)) return;
-  const ontem = somaDiasISO(iso, -1), v = conferenciaDe(ontem), atual = lerValor('abertura', iso), auto = lerValor('abauto', iso);
+  const ontem = diaAnteriorComMovimento(iso), v = conferenciaDe(ontem), atual = lerValor('abertura', iso), auto = lerValor('abauto', iso);
   if (atual && atual !== auto && !(!auto && atual === lerValor('coleta', ontem))) return;
   if (v !== atual) gravarValor('abertura', iso, v);
   gravarValor('abauto', iso, v);
@@ -799,7 +800,7 @@ function puxarAbertura(iso) {
 function botaoConfirma(texto, acao) {
   const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
   b.addEventListener('click', () => {
-    if (b.dataset.armado) return acao();
+    if (b.dataset.armado) { delete b.dataset.armado; b.textContent = texto; return acao(); } // 3º toque não repete
     b.dataset.armado = '1'; b.textContent = 'Toque de novo para confirmar';
     setTimeout(() => { if (b.isConnected) { delete b.dataset.armado; b.textContent = texto; } }, 4000);
   });
@@ -810,8 +811,19 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`;
 }), { className: 'btn' }));
+// Limpar o dia (ex.: depois de testes): apaga deste navegador tudo da data escolhida; os arquivos da pasta ficam
+function limparDia(iso) {
+  zerarDia(iso); for (const t of [...VALORES_DIA, 'abmanual', 'abauto']) gravarValor(t, iso, 0);
+  delete memoriaMovs[iso]; try { localStorage.removeItem(chaveMovs(iso)); } catch {}
+  gravarMarco('res-dia-' + iso, null);
+}
+$('acoes-fechamento').append(botaoSupervisor('Limpar o dia (apagar testes)', op => {
+  const iso = $('data').value || hojeISO(); limparDia(iso); mostraValoresDia(); calcular();
+  $('fechamento-status').textContent = `Dia ${dataBR(iso)} limpo por ${op}: comandas, abertura, suprimentos/retiradas, saídas e coleta apagados deste navegador (os arquivos da pasta continuam lá).`;
+}));
 
 function calcular() { calcularResultado(); renderTotais(); }
+let finalizando = false;
 
 function calcularResultado() {
   const out = $('resultado');
@@ -832,6 +844,7 @@ function calcularResultado() {
     ${situacao}
     <button type="button" class="btn" id="copiar-planilha">Finalizar e copiar para a planilha</button>`;
   $('copiar-planilha').addEventListener('click', async () => {
+    if (finalizando) return; // dois toques rápidos não lançam a mesma comanda duas vezes
     // Só fecha a conta com a senha de 4 dígitos de quem tem cadastro
     const op = operadorDa($('senha').value);
     if (!op) {
@@ -839,8 +852,12 @@ function calcularResultado() {
       $('senha').scrollIntoView({ block: 'center' }); $('senha').focus(); return;
     }
     const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
-    const onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes, op), iso);
-    const ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
+    finalizando = true;
+    let onde, ok;
+    try {
+      onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes, op), iso);
+      ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
+    } finally { finalizando = false; }
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
@@ -1128,15 +1145,15 @@ function renderMovs() {
 $('ir-movs').addEventListener('click', () => { abrirAba('movs'); $('mov-valor').focus(); });
 // S ou R antes da senha escolhe o tipo (S = Suprimento, R = Retirada); depois só os 4 números da senha
 const letraESenha = txt => { const t = String(txt).toUpperCase(), m = /^([SR]?)/.exec(t); return { letra: m[1], pin: t.slice(m[1].length).replace(/\D/g, '').slice(0, 4) }; };
+const TIPO_DA_LETRA = { S: 'Tipo: Suprimento (entra dinheiro no caixa)', R: 'Tipo: Retirada (sai dinheiro do caixa)' };
 $('mov-senha').addEventListener('input', () => {
   const { letra, pin } = letraESenha($('mov-senha').value);
-  $('mov-senha').value = letra + pin;
-  if (letra) document.querySelector(`input[name="mov-tipo"][value="${letra === 'S' ? 'sup' : 'ret'}"]`).checked = true;
+  $('mov-senha').value = letra + pin; $('mov-tipo').textContent = TIPO_DA_LETRA[letra] || '';
 });
 $('form-mov').addEventListener('submit', e => {
   e.preventDefault();
   const { letra, pin } = letraESenha($('mov-senha').value), iso = $('data').value || hojeISO();
-  const tipo = letra ? (letra === 'S' ? 'sup' : 'ret') : document.querySelector('input[name="mov-tipo"]:checked').value;
+  const tipo = letra === 'S' ? 'sup' : 'ret';
   const v = parseValor($('mov-valor').value.trim()), motivo = limpaNome($('mov-motivo').value), op = operadorDa(pin);
   const erro = !v ? 'Digite o valor (maior que zero).' : v > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`
     : !motivo ? 'Escreva o motivo.' : !letra ? 'Digite S (suprimento) ou R (retirada) antes da senha.'
@@ -1144,7 +1161,7 @@ $('form-mov').addEventListener('submit', e => {
   $('mov-err').textContent = erro; $('mov-ok').textContent = '';
   if (erro) return;
   gravarMovs(iso, [...lerMovs(iso), { hora: horaAgora(), tipo, valor: v, motivo, por: op }]);
-  $('mov-valor').value = ''; $('mov-motivo').value = ''; $('mov-senha').value = '';
+  $('mov-valor').value = ''; $('mov-motivo').value = ''; $('mov-senha').value = ''; $('mov-tipo').textContent = '';
   $('mov-ok').textContent = tipo === 'sup' ? `Suprimento de ${fmt(v)} lançado por ${op}.` : `Retirada de ${fmt(v)} lançada por ${op}.`;
   mostraValoresDia(); renderTotais(); renderMovs();
 });
@@ -1283,6 +1300,18 @@ if (/[?&]teste\b/.test(location.search)) {
   gravarValor('abertura', '1999-10-10', 50000); puxarAbertura('1999-10-10'); const a4 = lerValor('abertura', '1999-10-10'); // digitada antes desta versão
   zerarDia('1999-10-10'); for (const [t, d] of [['abertura', '1999-10-10'], ['saidas', '1999-10-10'], ['coleta', '1999-10-10'], ['abertura', '1999-10-11'], ['abmanual', '1999-10-11'], ['abauto', '1999-10-11'], ['abauto', '1999-10-10']]) gravarValor(t, d, 0);
   ok(conferenciaDe('1999-10-09') === 0 && a1 === 50000 && a2 === 55000 && a3 === 12300 && a4 === 50000, 'abertura vem da Conferência/Caixa do dia anterior (troca o valor antigo da coleta, respeita a abertura digitada)');
+  { // Café fechado um dia (app nem aberto): a abertura vem do último dia com movimento; Limpar o dia apaga tudo da data
+    somarDia('1999-08-06', { dinheiro: 30000 }); gravarValor('abertura', '1999-08-06', 10000);
+    puxarAbertura('1999-08-08'); const pulo = lerValor('abertura', '1999-08-08'); // 07 sem nada
+    gravarValor('saidas', '1999-08-08', 500); gravarMovs('1999-08-08', [{ hora: '10:00:00', tipo: 'sup', valor: 100, motivo: 't', por: 'Kelly' }]); somarDia('1999-08-08', { pix: 100 });
+    limparDia('1999-08-08'); const limpo = !temMovimento('1999-08-08') && !lerMovs('1999-08-08').length && !lerDia('1999-08-08').comandas;
+    limparDia('1999-08-06');
+    ok(pulo === 40000 && limpo && !temMovimento('1999-08-06'), 'dia sem movimento é pulado na abertura; Limpar o dia apaga comandas, caixa e lançamentos da data');
+  }
+  { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
+    let n = 0; const b = botaoConfirma('X', () => n++); b.click(); b.click(); b.click();
+    ok(n === 1 && b.dataset.armado === '1', 'botão de dois toques não repete no terceiro toque');
+  }
   ok(nomePastaMes('2026-10-22') === '2026-10 Outubro' && nomePastaMes('2027-01-05') === '2027-01 Janeiro', 'nome da pasta do mês');
   ok(inicioSemana('2026-10-22') === '2026-10-19' && inicioSemana('2026-10-19') === '2026-10-19' && inicioSemana('2026-11-01') === '2026-10-26', 'semana começa na segunda-feira');
   // Pasta simulada na memória (mesmos métodos da pasta do Chrome) para testar Comandas\<mês> e as cópias
@@ -1299,6 +1328,7 @@ if (/[?&]teste\b/.test(location.search)) {
     gravarMovs('1999-05-05', []); gravarValor('abastecimento', '1999-05-05', 0);
     OPERADORES[hashSenha('0002')] = 'Kelly'; const dataTela = $('data').value; $('data').value = '1999-05-06';
     const tentaMov = (valor, motivo, pin) => { $('mov-valor').value = valor; $('mov-motivo').value = motivo; $('mov-senha').value = pin; $('form-mov').requestSubmit(); return $('mov-err').textContent; };
+    $('mov-senha').value = 'r'; $('mov-senha').dispatchEvent(new Event('input')); const tipoR = $('mov-tipo').textContent;
     const e0 = tentaMov('10,00', 'troco', '0002'), e1 = tentaMov('10,00', 'troco', 'S9999'), e2 = tentaMov('10,00', '', 'S0002'), e3 = tentaMov('10,00', 'troco', 'S0002');
     gravarValor('abertura', '1999-05-06', 10000); renderMovs(); const listaAb = $('mov-lista').innerText;
     const e4 = tentaMov('2,00', 'troco', 'r0002'), l6 = lerMovs('1999-05-06'), listaAntes = $('mov-lista').innerText;
@@ -1314,7 +1344,7 @@ if (/[?&]teste\b/.test(location.search)) {
        && tem(listaDepois, 'Caixa fica em ' + fmt(9800), fmt(9800)) && !listaDepois.includes(fmt(10800)), 'caixa soma o suprimento e tira a retirada na hora, lançamento a lançamento');
     delete OPERADORES[hashSenha('0002')]; gravarMovs('1999-05-06', []); $('data').value = dataTela; mostraValoresDia(); renderTotais();
     ok(legado.length === 1 && legado[0].valor === 30000 && saldo === 25000 && arqMov.includes('Retirada;10:00:00;-50,00;gás;Kelly')
-       && e0.startsWith('Digite S') && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && e4 === ''
+       && tipoR.includes('Retirada') && e0.startsWith('Digite S') && e1.startsWith('Senha errada') && e2 === 'Escreva o motivo.' && e3 === '' && e4 === ''
        && l6.length === 2 && l6[0].por === 'Kelly' && l6[0].tipo === 'sup' && l6[0].valor === 1000 && l6[1].tipo === 'ret' && l6[1].valor === 200,
        'suprimento/retirada: S ou R + senha e motivo; saldo vai para o caixa e entra no fechamento do dia');
     ok(corrigiuOk, 'corrigir lançamento só com senha: fica riscado, sai do saldo e aparece no fechamento');
