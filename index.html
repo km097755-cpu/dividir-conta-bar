@@ -61,7 +61,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
 .totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
-#contagens .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
+#contagens .falta span:last-child, #contado-previa .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
 #contagens .liberar { justify-content: flex-start } #contagens .liberar small { text-align: left }
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
@@ -314,8 +314,12 @@ ul.barras li.empty { display: block }
         </div>
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
         <div class="field">
-          <label for="contado">Dinheiro contado na gaveta</label>
-          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="contado" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="contado-hint contado-err"></div>
+          <span class="field-title">Dinheiro contado na gaveta</span>
+          <label for="contado-notas">Notas</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="contado-notas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="contado-hint contado-err"></div>
+          <label for="contado-moedas">Moedas</label>
+          <div class="money"><span aria-hidden="true">R$</span><input type="text" id="contado-moedas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="contado-hint contado-err"></div>
+          <div class="totais" id="contado-previa" aria-live="polite"></div>
           <label for="contado-senha">Senha de quem contou (4 dígitos)</label>
           <input type="password" id="contado-senha" class="plain" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
           <div class="hint" id="contado-hint"></div>
@@ -486,8 +490,9 @@ async function fechamentoDoDia(iso, comPasta) {
     [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por', 'Corrigido (não conta)'],
     ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, m.corrigido ? '0,00' : (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por,
       m.corrigido ? `por ${m.corrigido.por} às ${m.corrigido.hora} (era ${reais(m.valor)})` : '']),
-    [], ['Contagem da gaveta', 'Hora', 'Contado (R$)', 'Esperado (R$)', 'Diferença (R$)', 'Contado por', 'Diferença lançada no caixa'],
-    ...lerContagens(iso).map(c => ['Contagem', c.hora, reais(c.contado), reais(c.esperado), reais(c.contado - c.esperado), c.por, c.ajuste ? `por ${c.ajuste.por} às ${c.ajuste.hora}` : ''])];
+    [], ['Contagem da gaveta', 'Hora', 'Notas (R$)', 'Moedas (R$)', 'Contado (R$)', 'Esperado (R$)', 'Diferença (R$)', 'Contado por', 'Diferença lançada no caixa'],
+    ...lerContagens(iso).map(c => ['Contagem', c.hora, c.notas != null ? reais(c.notas) : '', c.moedas != null ? reais(c.moedas) : '', reais(c.contado), reais(c.esperado), reais(c.contado - c.esperado), c.por,
+      c.ajuste ? `por ${c.ajuste.por} às ${c.ajuste.hora}` : ''])];
   let texto = linhas.map(l => l.join(';')).join('\r\n');
   if (comPasta) { const t = await lerComandasDaPasta(iso); if (t.length) texto += '\r\n\r\nPagamentos de cada comanda\r\n' + copiaGeral([iso], new Map([[iso, t]])).replace(/^﻿/, ''); }
   return '﻿' + texto + '\r\n';
@@ -785,7 +790,8 @@ function renderTotais() {
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
   // Cada contagem: hora, quem, quanto contou e, à direita, a diferença com sinal (+ sobrou, − faltou)
   $('contagens').replaceChildren(...lerContagens(iso).map((c, i) => {
-    const d = c.contado - c.esperado, el = linha(`${c.hora.slice(0, 5)} · ${c.por} · contado ${fmt(c.contado)} · ${difTxt(d)}`, 0, d < 0 ? 'falta' : d > 0 ? 'sobra' : '');
+    const partes = c.notas != null ? ` (notas ${fmt(c.notas)}, moedas ${fmt(c.moedas)})` : '';
+    const d = c.contado - c.esperado, el = linha(`${c.hora.slice(0, 5)} · ${c.por} · contado ${fmt(c.contado)}${partes} · ${difTxt(d)}`, 0, d < 0 ? 'falta' : d > 0 ? 'sobra' : '');
     el.lastChild.textContent = d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0);
     // Diferença vira lançamento no caixa (sobrou = suprimento, faltou = retirada), uma vez só, com senha da Pilar ou da Solange
     if (c.ajuste) el.firstChild.append(Object.assign(document.createElement('small'), { className: 'mov-motivo', textContent: `Diferença lançada no caixa por ${c.ajuste.por} às ${c.ajuste.hora.slice(0, 5)}` }));
@@ -795,7 +801,8 @@ function renderTotais() {
     }));
     return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
   }));
-  $('contado-hint').textContent = `Esperado na gaveta agora: ${fmt(caixa - co)}. Conte as notas e moedas, digite o valor e a senha de quem contou.`;
+  $('contado-hint').textContent = `Esperado na gaveta agora (Conferência/Caixa): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
+  previaContagem();
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
@@ -873,16 +880,30 @@ function limparDia(iso) {
 }
 // Registrar contagem: valor contado + senha de qualquer colaborador; guarda o esperado da hora para mostrar a sobra ou a falta
 $('contado-senha').addEventListener('input', () => { $('contado-senha').value = $('contado-senha').value.replace(/\D/g, '').slice(0, 4); });
+// Notas e moedas contadas (campo vazio = 0); contado = notas + moedas
+function lerContado() {
+  const t = id => $(id).value.trim(), v = id => t(id) === '' ? 0 : parseValor(t(id)), notas = v('contado-notas'), moedas = v('contado-moedas');
+  return { vazio: !t('contado-notas') && !t('contado-moedas'), ok: notas !== null && moedas !== null, notas, moedas, total: (notas || 0) + (moedas || 0) };
+}
+// Antes de registrar: notas, moedas, contado e a comparação com a Conferência/Caixa (sobrou ou faltou)
+function previaContagem() {
+  const c = lerContado(), esp = gavetaDe($('data').value || hojeISO()), d = c.total - esp;
+  const mk = (a, b, cls) => { const el = document.createElement('div'); if (cls) el.className = cls; el.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: b })); return el; };
+  if (c.vazio || !c.ok) return $('contado-previa').replaceChildren();
+  $('contado-previa').replaceChildren(mk('Notas', fmt(c.notas)), mk('Moedas', fmt(c.moedas)), mk('Contado (notas + moedas)', fmt(c.total), 'geral'),
+    mk('Conferência/Caixa', fmt(esp)), mk(difTxt(d), d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0), d < 0 ? 'falta' : d > 0 ? 'sobra' : ''));
+}
+for (const id of ['contado-notas', 'contado-moedas']) $(id).addEventListener('input', previaContagem);
 $('contar').addEventListener('click', () => {
-  const iso = $('data').value || hojeISO(), v = parseValor($('contado').value.trim()), op = operadorDa($('contado-senha').value);
-  const erro = v === null ? 'Digite o valor contado na gaveta (ex.: 150,00).' : v > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.`
-    : !op ? 'Senha errada: digite a senha de 4 dígitos de quem contou.' : '';
-  $('contado-err').textContent = erro; $('contado').setAttribute('aria-invalid', v === null ? 'true' : 'false');
+  const iso = $('data').value || hojeISO(), c = lerContado(), op = operadorDa($('contado-senha').value);
+  const erro = c.vazio ? 'Digite quanto tem em notas e em moedas (ex.: 150,00).' : !c.ok ? 'Valor inválido. Use números com até 2 casas, ex.: 150,00.'
+    : c.total > MAX_CENTS ? `Valor alto demais. O limite é ${fmt(MAX_CENTS)}.` : !op ? 'Senha errada: digite a senha de 4 dígitos de quem contou.' : '';
+  $('contado-err').textContent = erro;
   if (erro) return;
   const esperado = gavetaDe(iso);
-  gravarContagens(iso, [...lerContagens(iso), { hora: horaAgora(), contado: v, esperado, por: op }]);
-  $('contado').value = ''; $('contado-senha').value = ''; renderTotais();
-  avisar(`Contagem registrada por ${op}: ${difTxt(v - esperado)}.`, 8000);
+  gravarContagens(iso, [...lerContagens(iso), { hora: horaAgora(), contado: c.total, notas: c.notas, moedas: c.moedas, esperado, por: op }]);
+  $('contado-notas').value = ''; $('contado-moedas').value = ''; $('contado-senha').value = ''; renderTotais();
+  avisar(`Contagem registrada por ${op}: ${difTxt(c.total - esperado)}.`, 8000);
 });
 $('acoes-fechamento').append(botaoSupervisor('Limpar o dia (apagar testes)', op => {
   const iso = $('data').value || hojeISO(); limparDia(iso); mostraValoresDia(); calcular();
@@ -1385,9 +1406,11 @@ if (/[?&]teste\b/.test(location.search)) {
     puxarAbertura(diaSeguinte(g)); const amanha = lerValor('abertura', diaSeguinte(g)); // 100 + 50 − 10 − 20 = 120 (sem os 55 de PIX/crédito)
     OPERADORES[hashSenha('0003')] = 'Kelly'; const dataT = $('data').value; $('data').value = g; calcular();
     const telaG = $('fechamento').innerText + $('pos-coleta').innerText;
-    $('contado').value = '115,00'; $('contado-senha').value = '9999'; $('contar').click(); const errSenha = $('contado-err').textContent;
-    $('contado-senha').value = '0003'; $('contar').click(); const cont = lerContagens(g), listaC = $('contagens').innerText;
-    $('contado').value = '120,00'; $('contado-senha').value = '0003'; $('contar').click(); const listaC2 = $('contagens').innerText;
+    $('contado-notas').value = '100,00'; $('contado-moedas').value = '15,00'; $('contado-moedas').dispatchEvent(new Event('input'));
+    const previa = $('contado-previa').innerText; // antes de registrar: notas, moedas, contado, conferência e a falta
+    $('contado-senha').value = '9999'; $('contar').click(); const errSenha = $('contado-err').textContent;
+    $('contado-senha').value = '0003'; $('contar').click(); const cont = lerContagens(g), listaC = $('contagens').innerText, previaLimpa = $('contado-previa').innerText.trim() === '';
+    $('contado-notas').value = '120,00'; $('contado-senha').value = '0003'; $('contar').click(); const listaC2 = $('contagens').innerText;
     // Lançar a diferença (faltou R$ 5) no caixa: vira retirada, a gaveta passa a bater com o contado e o botão some
     OPERADORES[hashSenha('0004')] = 'Pilar'; const botoesAntes = $('contagens').querySelectorAll('.liberar').length;
     const bl = $('contagens').querySelector('.liberar'); bl.querySelector('button').click(); bl.querySelector('input').value = '0004'; bl.querySelector('.btn').click();
@@ -1397,8 +1420,10 @@ if (/[?&]teste\b/.test(location.search)) {
     fechamentoDoDia(g, false).then(arqG => {
       ok(amanha === 12000 && telaG.includes(fmt(5500)) && telaG.includes(fmt(14000)) && telaG.includes(fmt(12000))
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
+         && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
+         && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
          && listaC.includes('Faltou ' + fmt(500)) && listaC.includes('− ' + fmt(500)) && listaC2.includes('Bateu certo')
-         && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';115,00\r\nComandas finalizadas') && arqG.includes(';115,00;120,00;-5,00;Kelly;por Pilar às '),
+         && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';115,00\r\nComandas finalizadas') && arqG.includes('Contagem;') && arqG.includes(';100,00;15,00;115,00;120,00;-5,00;Kelly;por Pilar às '),
          'gaveta só com dinheiro vira a abertura de amanhã; contagem com senha mostra sobra/falta e vai no fechamento');
       ok(botoesAntes === 1 && movL.tipo === 'ret' && movL.valor === 500 && movL.por === 'Pilar' && movL.motivo.includes('faltou') && gavDepois === 11500
          && botoesDepois === 0 && listaC3.includes('Diferença lançada no caixa por Pilar') && naoRepete,
