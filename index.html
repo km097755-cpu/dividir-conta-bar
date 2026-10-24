@@ -60,6 +60,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
+.totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
@@ -297,7 +298,7 @@ ul.barras li.empty { display: block }
       <div class="panel" aria-labelledby="h-fechamento">
         <div class="totais" id="fech-topo" aria-live="polite"></div>
         <div class="field">
-          <label for="saidas">Saídas/Compras</label>
+          <label for="saidas">Saídas</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="saidas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="saidas-err saidas-hint"></div>
           <div class="err" id="saidas-err"></div>
           <div class="hint" id="saidas-hint">Dinheiro que saiu do caixa no dia (compras, pagamentos). Não mexe nas comandas: só entra no fechamento do dia da data escolhida.</div>
@@ -437,7 +438,7 @@ function copiaGeral(dias, porDia) {
     if (!v.comandas && !ab && !abs && !sa && !co) continue;
     resumo.push([dataBR(d), ...[ab, abs, v.formas.pix || 0, v.formas.debito || 0, v.formas.credito || 0, v.formas.dinheiro || 0, v.centavos, sa, co, ab + abs + (v.formas.dinheiro || 0) - sa - co].map(reais), v.comandas]);
   }
-  const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas/Compras;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
+  const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
 async function lerComandasDaPasta(iso) {
@@ -474,9 +475,9 @@ async function fechamentoDoDia(iso, comPasta) {
   const linhas = [['Fechamento do dia', dataBR(iso)], ['Finalizado em', agoraTxt()], [],
     ['Caixa', 'Valor (R$)'], ['Abertura de caixa', reais(ab)], ['Suprimento/Retirada (saldo)', reais(sup)], ['Valor total do caixa', reais(ab + sup)],
     ...Object.entries(PAGAMENTOS).map(([k, n]) => ['Vendas em ' + n, reais(f[k] || 0)]), ...(f[''] ? [['Vendas sem forma de pagamento', reais(f[''])]] : []),
-    ['Resultado do dia (Vendas)', reais(dia.centavos)], ['Vendas + abertura de caixa', reais(caixa)], ['PIX e cartão (vai para a conta, não fica na gaveta)', reais(dia.centavos - (f.dinheiro || 0))],
-    ['Saídas/Compras', reais(sa)], ['Dinheiro no caixa (pagamentos ou compras)', reais(gav)], ['Coleta/Cofre', reais(co)],
-    ['Total', reais(gav - co)], [`Conferência/Caixa (vira a abertura de ${dataBR(diaSeguinte(iso))})`, reais(gav - co)], ['Comandas finalizadas', String(dia.comandas)], [],
+    ['Total (vendas do dia)', reais(dia.centavos)], ['Vendas + abertura de caixa', reais(caixa)], ['PIX e cartão (vai para a conta, não fica na gaveta)', reais(dia.centavos - (f.dinheiro || 0))],
+    ['Saídas', reais(sa)], ['Dinheiro no caixa (pagamentos ou compras)', reais(gav)], ['Coleta/Cofre', reais(co)],
+    ['Total na gaveta', reais(gav - co)], [`Conferência/Caixa (vira a abertura de ${dataBR(diaSeguinte(iso))})`, reais(gav - co)], ['Comandas finalizadas', String(dia.comandas)], [],
     ['Comandas do dia (hora)', ...Object.values(PAGAMENTOS), 'Total'],
     ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
       .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))]),
@@ -763,18 +764,22 @@ function renderTotais() {
   const co = lerValor('coleta', iso), din = f.dinheiro || 0, caixa = ab + abs + din - sa;
   const comDica = (el, dica) => { el.tabIndex = 0; el.dataset.dica = dica; return el; };
   $('fechamento').replaceChildren(
-    linha('Resultado do dia (Vendas)', dia.centavos, 'geral'),
+    comDica(linha('Total', dia.centavos, 'geral'), `Total vendido no dia (todas as formas): ${fmt(dia.centavos)}`),
     comDica(linha('PIX e cartão (vai para a conta, não fica na gaveta)', dia.centavos - din), `Vendas ${fmt(dia.centavos)} − vendas em dinheiro ${fmt(din)}`),
     comDica(linha('Dinheiro no caixa (pagamentos ou compras)', caixa, 'destaque'), `Só o dinheiro da gaveta: abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas em dinheiro ${fmt(din)} − pagamentos ou compras ${fmt(sa)}`),
-    linha('Total', caixa - co, 'geral dia destaque'));
+    linha('Total na gaveta', caixa - co, 'geral dia destaque'));
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
   $('pos-coleta').replaceChildren(Object.assign(linha('Conferência/Caixa', caixa - co, 'geral dia destaque'), { tabIndex: 0 }));
   $('pos-coleta').lastChild.dataset.dica = `Dinheiro da gaveta: abertura + suprimento/retirada + vendas em dinheiro − compras − coleta (PIX e cartão não entram)\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
-  $('contagens').replaceChildren(...lerContagens(iso).map(c => comDica(linha(`${c.hora.slice(0, 5)} · ${c.por}: ${difTxt(c.contado - c.esperado)}`, c.contado, c.contado < c.esperado ? 'falta' : ''),
-    `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`)));
+  // Cada contagem: hora, quem, quanto contou e, à direita, a diferença com sinal (+ sobrou, − faltou)
+  $('contagens').replaceChildren(...lerContagens(iso).map(c => {
+    const d = c.contado - c.esperado, el = linha(`${c.hora.slice(0, 5)} · ${c.por} · contado ${fmt(c.contado)} · ${difTxt(d)}`, 0, d < 0 ? 'falta' : d > 0 ? 'sobra' : '');
+    el.lastChild.textContent = d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0);
+    return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
+  }));
   $('contado-hint').textContent = `Esperado na gaveta agora: ${fmt(caixa - co)}. Conte as notas e moedas, digite o valor e a senha de quem contou.`;
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
@@ -1372,7 +1377,7 @@ if (/[?&]teste\b/.test(location.search)) {
     fechamentoDoDia(g, false).then(arqG => {
       ok(amanha === 12000 && telaG.includes(fmt(5500)) && telaG.includes(fmt(14000)) && telaG.includes(fmt(12000))
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
-         && listaC.includes('Faltou ' + fmt(500)) && listaC2.includes('Bateu certo')
+         && listaC.includes('Faltou ' + fmt(500)) && listaC.includes('− ' + fmt(500)) && listaC2.includes('Bateu certo')
          && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';120,00\r\nComandas finalizadas') && arqG.includes('Contagem;') && arqG.includes(';115,00;120,00;-5,00;Kelly'),
          'gaveta só com dinheiro vira a abertura de amanhã; contagem com senha mostra sobra/falta e vai no fechamento');
       limparDia(g); limparDia(diaSeguinte(g));
