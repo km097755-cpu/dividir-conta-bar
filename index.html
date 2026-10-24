@@ -61,7 +61,8 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .mov-corrigido { text-decoration: line-through; opacity: .6 } /* valor de lançamento corrigido: não conta */
 .mov-caixa { font-weight: 600 }
 .totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
-#contagens .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap } /* faltou: valor em destaque vermelho */
+#contagens .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
+#contagens .liberar { justify-content: flex-start } #contagens .liberar small { text-align: left }
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
 .blocos { display: grid; gap: 16px } /* quadros Caixa e Conta dentro do mesmo formulário */
@@ -485,8 +486,8 @@ async function fechamentoDoDia(iso, comPasta) {
     [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por', 'Corrigido (não conta)'],
     ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, m.corrigido ? '0,00' : (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por,
       m.corrigido ? `por ${m.corrigido.por} às ${m.corrigido.hora} (era ${reais(m.valor)})` : '']),
-    [], ['Contagem da gaveta', 'Hora', 'Contado (R$)', 'Esperado (R$)', 'Diferença (R$)', 'Contado por'],
-    ...lerContagens(iso).map(c => ['Contagem', c.hora, reais(c.contado), reais(c.esperado), reais(c.contado - c.esperado), c.por])];
+    [], ['Contagem da gaveta', 'Hora', 'Contado (R$)', 'Esperado (R$)', 'Diferença (R$)', 'Contado por', 'Diferença lançada no caixa'],
+    ...lerContagens(iso).map(c => ['Contagem', c.hora, reais(c.contado), reais(c.esperado), reais(c.contado - c.esperado), c.por, c.ajuste ? `por ${c.ajuste.por} às ${c.ajuste.hora}` : ''])];
   let texto = linhas.map(l => l.join(';')).join('\r\n');
   if (comPasta) { const t = await lerComandasDaPasta(iso); if (t.length) texto += '\r\n\r\nPagamentos de cada comanda\r\n' + copiaGeral([iso], new Map([[iso, t]])).replace(/^﻿/, ''); }
   return '﻿' + texto + '\r\n';
@@ -650,6 +651,13 @@ const VALORES_DIA = ['abertura', 'abastecimento', 'saidas', 'coleta'];
 const memoriaCont = {}, chaveCont = iso => 'bookafe-contagem-' + iso;
 function lerContagens(iso) { try { const v = JSON.parse(localStorage.getItem(chaveCont(iso))); if (Array.isArray(v)) return v; } catch {} return memoriaCont[iso] || []; }
 function gravarContagens(iso, l) { memoriaCont[iso] = l; try { l.length ? localStorage.setItem(chaveCont(iso), JSON.stringify(l)) : localStorage.removeItem(chaveCont(iso)); } catch {} }
+// Lança a diferença da contagem i no Suprimento/Retirada do dia (o caixa passa a bater com o que foi contado) e marca a contagem
+function lancarDiferenca(iso, i, por) {
+  const l = lerContagens(iso), c = l[i], d = c.contado - c.esperado, hora = horaAgora();
+  if (!d || c.ajuste) return;
+  gravarMovs(iso, [...lerMovs(iso), { hora, tipo: d > 0 ? 'sup' : 'ret', valor: Math.abs(d), motivo: `Diferença da contagem das ${c.hora.slice(0, 5)} (${d > 0 ? 'sobrou' : 'faltou'})`, por }]);
+  gravarContagens(iso, l.map((x, j) => j === i ? { ...x, ajuste: { por, hora } } : x));
+}
 function difTxt(d) { return d > 0 ? `Sobrou ${fmt(d)}` : d < 0 ? `Faltou ${fmt(-d)}` : 'Bateu certo'; }
 const memoriaValor = {};
 const chaveValor = (tipo, iso) => `bookafe-${tipo}-${iso}`;
@@ -776,9 +784,15 @@ function renderTotais() {
   $('pos-coleta').lastChild.dataset.dica = `Dinheiro da gaveta: abertura + suprimento/retirada + vendas em dinheiro − compras − coleta (PIX e cartão não entram)\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
   // Cada contagem: hora, quem, quanto contou e, à direita, a diferença com sinal (+ sobrou, − faltou)
-  $('contagens').replaceChildren(...lerContagens(iso).map(c => {
+  $('contagens').replaceChildren(...lerContagens(iso).map((c, i) => {
     const d = c.contado - c.esperado, el = linha(`${c.hora.slice(0, 5)} · ${c.por} · contado ${fmt(c.contado)} · ${difTxt(d)}`, 0, d < 0 ? 'falta' : d > 0 ? 'sobra' : '');
     el.lastChild.textContent = d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0);
+    // Diferença vira lançamento no caixa (sobrou = suprimento, faltou = retirada), uma vez só, com senha da Pilar ou da Solange
+    if (c.ajuste) el.firstChild.append(Object.assign(document.createElement('small'), { className: 'mov-motivo', textContent: `Diferença lançada no caixa por ${c.ajuste.por} às ${c.ajuste.hora.slice(0, 5)}` }));
+    else if (d) el.firstChild.append(botaoSupervisor('Lançar diferença no caixa', op => {
+      lancarDiferenca(iso, i, op); mostraValoresDia(); calcular();
+      avisar(`Diferença de ${d > 0 ? '+ ' : '− '}${fmt(Math.abs(d))} lançada no caixa por ${op} (${d > 0 ? 'suprimento' : 'retirada'}).`, 8000);
+    }));
     return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
   }));
   $('contado-hint').textContent = `Esperado na gaveta agora: ${fmt(caixa - co)}. Conte as notas e moedas, digite o valor e a senha de quem contou.`;
@@ -1374,13 +1388,21 @@ if (/[?&]teste\b/.test(location.search)) {
     $('contado').value = '115,00'; $('contado-senha').value = '9999'; $('contar').click(); const errSenha = $('contado-err').textContent;
     $('contado-senha').value = '0003'; $('contar').click(); const cont = lerContagens(g), listaC = $('contagens').innerText;
     $('contado').value = '120,00'; $('contado-senha').value = '0003'; $('contar').click(); const listaC2 = $('contagens').innerText;
-    delete OPERADORES[hashSenha('0003')]; $('data').value = dataT; calcular();
+    // Lançar a diferença (faltou R$ 5) no caixa: vira retirada, a gaveta passa a bater com o contado e o botão some
+    OPERADORES[hashSenha('0004')] = 'Pilar'; const botoesAntes = $('contagens').querySelectorAll('.liberar').length;
+    const bl = $('contagens').querySelector('.liberar'); bl.querySelector('button').click(); bl.querySelector('input').value = '0004'; bl.querySelector('.btn').click();
+    const movL = lerMovs(g).at(-1), gavDepois = gavetaDe(g), botoesDepois = $('contagens').querySelectorAll('.liberar').length, listaC3 = $('contagens').innerText;
+    lancarDiferenca(g, 0, 'Pilar'); const naoRepete = lerMovs(g).length === 1;
+    delete OPERADORES[hashSenha('0003')]; delete OPERADORES[hashSenha('0004')]; $('data').value = dataT; calcular();
     fechamentoDoDia(g, false).then(arqG => {
       ok(amanha === 12000 && telaG.includes(fmt(5500)) && telaG.includes(fmt(14000)) && telaG.includes(fmt(12000))
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && listaC.includes('Faltou ' + fmt(500)) && listaC.includes('− ' + fmt(500)) && listaC2.includes('Bateu certo')
-         && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';120,00\r\nComandas finalizadas') && arqG.includes('Contagem;') && arqG.includes(';115,00;120,00;-5,00;Kelly'),
+         && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';115,00\r\nComandas finalizadas') && arqG.includes(';115,00;120,00;-5,00;Kelly;por Pilar às '),
          'gaveta só com dinheiro vira a abertura de amanhã; contagem com senha mostra sobra/falta e vai no fechamento');
+      ok(botoesAntes === 1 && movL.tipo === 'ret' && movL.valor === 500 && movL.por === 'Pilar' && movL.motivo.includes('faltou') && gavDepois === 11500
+         && botoesDepois === 0 && listaC3.includes('Diferença lançada no caixa por Pilar') && naoRepete,
+         'lançar a diferença da contagem no caixa (com senha) faz a gaveta bater com o contado, uma vez só');
       limparDia(g); limparDia(diaSeguinte(g));
     });
   }
