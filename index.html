@@ -842,26 +842,27 @@ function renderTotais() {
 }
 
 // Zerar (e voltar a contar) só com a senha de quem pode liberar; quem = null aceita qualquer colaborador com senha
-const LIBERAM = ['Pilar', 'Solange'];
+const LIBERAM = ['Pilar', 'Solange', 'Kleber'];
+const nomesLiberam = () => LIBERAM.join(', ').replace(/, ([^,]*)$/, ' ou $1'); // "Pilar, Solange ou Kleber"
 function botaoSupervisor(texto, acao, quem = LIBERAM) {
   const caixa = Object.assign(document.createElement('p'), { className: 'liberar' });
   const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
   b.addEventListener('click', () => {
     if (caixa.querySelector('input')) return caixa.querySelector('input').focus();
     const inp = Object.assign(document.createElement('input'), { type: 'password', inputMode: 'numeric', maxLength: 4, autocomplete: 'off', placeholder: '••••', className: 'plain' });
-    inp.setAttribute('aria-label', `Senha para ${texto.toLowerCase()} (${quem ? 'só Pilar ou Solange' : 'qualquer colaborador com senha'})`);
+    inp.setAttribute('aria-label', `Senha para ${texto.toLowerCase()} (${quem ? 'só ' + nomesLiberam() : 'qualquer colaborador com senha'})`);
     const ok = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Liberar' });
     const nao = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Cancelar' });
-    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: quem ? 'Senha da Pilar ou da Solange' : 'Senha de quem está corrigindo' });
+    const msg = Object.assign(document.createElement('small'), { className: 'err', textContent: quem ? 'Senha de ' + nomesLiberam() : 'Senha de quem está corrigindo' });
     msg.setAttribute('role', 'alert');
     const fechar = () => { inp.remove(); ok.remove(); nao.remove(); msg.remove(); b.focus(); };
     const tentar = () => {
       const op = operadorDa(inp.value);
       if (op && (!quem || quem.includes(op))) { fechar(); return acao(op); }
-      msg.textContent = op ? `${op} não pode liberar: só Pilar ou Solange.` : 'Senha errada.'; inp.value = ''; inp.focus();
+      msg.textContent = op ? `${op} não pode liberar: só ${nomesLiberam()}.` : 'Senha errada.'; inp.value = ''; inp.focus();
     };
     inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 4); });
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') tentar(); if (e.key === 'Escape') fechar(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); tentar(); } if (e.key === 'Escape') fechar(); });
     ok.addEventListener('click', tentar); nao.addEventListener('click', fechar);
     caixa.append(inp, ok, nao, msg); inp.focus();
   });
@@ -979,7 +980,7 @@ if ('serviceWorker' in navigator && ((location.protocol === 'https:' && location
 const CAMPOS = 'input[type="text"], input[type="password"], input[type="date"], select';
 document.addEventListener('keydown', e => {
   const el = e.target;
-  if (e.key !== 'Enter' || e.isComposing || !el.matches?.(CAMPOS) || el.matches('select') || el.closest('.liberar, #trava')) return;
+  if (e.key !== 'Enter' || e.isComposing || !el.isConnected || !el.matches?.(CAMPOS) || el.matches('select') || el.closest('.liberar, #trava')) return;
   if (el.id === 'contado-senha') { e.preventDefault(); return $('contar').click(); }
   const campos = [...document.querySelectorAll(CAMPOS)].filter(c => !c.readOnly && !c.disabled && c.offsetParent !== null && !c.closest('.liberar'));
   const prox = campos[campos.indexOf(el) + 1];
@@ -1499,7 +1500,7 @@ if (/[?&]teste\b/.test(location.search)) {
   const tenta = pin => { bz.querySelector('input').value = pin; bz.querySelector('.btn').click(); };
   tenta('9999'); const m1 = bz.querySelector('small').textContent; tenta('0001'); const m2 = bz.querySelector('small').textContent; tenta('0000');
   delete OPERADORES[hashSenha('0000')]; delete OPERADORES[hashSenha('0001')];
-  ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input'), 'zerar só libera com a senha da Pilar ou da Solange');
+  ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input') && m2.includes('Pilar, Solange ou Kleber'), 'zerar só libera com a senha da Pilar, da Solange ou do Kleber');
   const qf = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1, dinheiro: 2 } }, { hora: '11:00:00', formas: { pix: 3 } }]]]);
   const qz = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1 } }, { hora: '11:00:00', formas: { pix: 3 } }]]], marcoDesde({ quando: '07/07/1999 10:00' }));
   ok(qf.pix === 2 && qf.dinheiro === 1 && !qf.debito && qz.pix === 1, 'quantidade de comandas por forma, e só depois de zerar');
