@@ -70,7 +70,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .trava-caixa { width: min(380px, 100%); display: grid; gap: 12px }
 .trava-caixa input { font: inherit; color: var(--ink); background: var(--bg); padding: 10px 12px; width: 100% }
 .totais .sobra span:last-child { color: var(--ok); font-weight: 700 } /* contagem da gaveta: sobrou */
-#contagens .falta span:last-child, #contado-previa .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
+#contagens .falta span:last-child, #contado-previa .falta span:last-child, #sobra-caixa .falta span:last-child { background: var(--err); color: var(--bg); font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; align-self: flex-start } /* faltou: valor em destaque vermelho */
 #contagens .liberar { justify-content: flex-start } #contagens .liberar small { text-align: left }
 #mov-lista .liberar { justify-content: flex-start } #mov-lista .liberar small { text-align: left }
 #abastecimento[readonly] { color: var(--accent) }
@@ -828,9 +828,14 @@ function renderTotais() {
   }));
   $('contado-hint').textContent = `Esperado na gaveta agora (só dinheiro, sem PIX e cartão): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
   previaContagem();
-  // Acima do Finalizar o dia: o que sobrou no caixa (dinheiro da gaveta), que o Finalizar grava como abertura do dia seguinte
-  $('sobra-caixa').replaceChildren(comDica(linha(`Saldo do caixa (abertura de ${dataBR(diaSeguinte(iso))})`, Math.max(0, caixa - co), 'geral dia destaque'),
-    'Total do dinheiro da gaveta. Ao tocar em "Finalizar o dia", esse valor vira a abertura de caixa do dia seguinte.'));
+  // Acima do Finalizar o dia: Saldo do caixa = o que foi contado na última contagem (em branco até contar) e, embaixo, a diferença;
+  // o Finalizar grava o Saldo como abertura do dia seguinte
+  const ult = lerContagens(iso).at(-1), saldoEl = linha(`Saldo do caixa (abertura de ${dataBR(diaSeguinte(iso))})`, ult ? ult.contado : 0, 'geral dia destaque');
+  if (!ult) saldoEl.lastChild.textContent = '';
+  const difEl = ult && (() => { const d = ult.contado - ult.esperado, el = linha(ult.ajuste ? 'Diferença (lançada no caixa)' : 'Diferença', 0, d < 0 ? 'falta' : d > 0 ? 'sobra' : '');
+    el.lastChild.textContent = d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0); return el; })();
+  $('sobra-caixa').replaceChildren(comDica(saldoEl, ult ? `Contado às ${ult.hora.slice(0, 5)} por ${ult.por}. Ao tocar em "Finalizar o dia", vira a abertura de caixa do dia seguinte.`
+    : 'Fica em branco até registrar a contagem do caixa.'), ...(difEl ? [difEl] : []));
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
@@ -892,11 +897,11 @@ function botaoConfirma(texto, acao) {
 // Botão "Finalizar o dia" (dois toques), no quadro Fechamento do dia
 $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', async () => {
   const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
-  // O que sobrou no caixa vira a abertura do dia seguinte, fixa (vale mesmo que alguém já tenha aberto o dia seguinte)
-  const sobra = conferenciaDe(iso), amanha = diaSeguinte(iso);
+  // O Saldo do caixa (o contado na última contagem; sem contagem, o calculado) vira a abertura do dia seguinte, fixa
+  const ult = lerContagens(iso).at(-1), sobra = ult ? ult.contado : conferenciaDe(iso), amanha = diaSeguinte(iso);
   gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`
-    + ` Saldo do caixa ${fmt(sobra)}: essa é a abertura de caixa de ${dataBR(amanha)}.`;
+    + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`;
 }), { className: 'btn' }));
 // Abertura errada (a mais ou a menos): zera com a senha da Pilar ou da Solange e fica zerada (não volta a vir do dia anterior)
 function zerarAbertura(iso) { gravarValor('abertura', iso, 0); gravarValor('abmanual', iso, 1); }
@@ -1517,7 +1522,7 @@ if (/[?&]teste\b/.test(location.search)) {
     lancarDiferenca(g, 0, 'Pilar'); const naoRepete = lerMovs(g).length === 1;
     delete OPERADORES[hashSenha('0003')]; delete OPERADORES[hashSenha('0004')]; $('data').value = dataT; calcular();
     fechamentoDoDia(g, false).then(arqG => {
-      ok(amanha === 12000 && totalG.includes(fmt(17500)) && !telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
+      ok(amanha === 12000 && totalG.includes(fmt(17500)) && !telaG.includes(fmt(10500)) && !telaG.includes(fmt(12000)) && telaG.includes('Saldo do caixa') && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
          && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
@@ -1561,12 +1566,16 @@ if (/[?&]teste\b/.test(location.search)) {
       const sf = salvarFechamento, dataS = $('data').value, g = '1999-04-10', am = diaSeguinte(g); salvarFechamento = async () => 'teste';
       limparDia(g); limparDia(am); gravarValor('abertura', g, 10000); gravarValor('abmanual', g, 1); somarDia(g, { dinheiro: 5000, pix: 4000 }); gravarValor('coleta', g, 2000);
       gravarValor('abertura', am, 777); gravarValor('abmanual', am, 1); // alguém já tinha digitado a abertura de amanhã
-      $('data').value = g; calcular(); const linhaSobra = $('sobra-caixa').textContent;
+      $('data').value = g; calcular(); const semContagem = $('sobra-caixa').textContent;
+      gravarContagens(g, [{ hora: '18:00:00', contado: 12500, notas: 12000, moedas: 500, esperado: 13000, por: 'Kelly' }]); calcular();
+      const linhaSobra = $('sobra-caixa').textContent;
       const bf = $('acoes-fechamento').querySelector('.btn'); bf.click(); bf.click(); await new Promise(r => setTimeout(r, 30));
       const abAm = lerValor('abertura', am), status = $('fechamento-status').textContent;
       limparDia(g); limparDia(am); salvarFechamento = sf; $('data').value = dataS; calcular();
-      ok(linhaSobra.includes('Saldo do caixa (abertura de ' + dataBR(am) + ')') && linhaSobra.includes(fmt(13000)) && abAm === 13000 && status.includes('abertura de caixa de ' + dataBR(am)),
-        'Finalizar o dia mostra o que sobrou no caixa e grava esse valor como abertura do dia seguinte');
+      ok(semContagem.includes('Saldo do caixa (abertura de ' + dataBR(am) + ')') && !semContagem.includes('R$') && !semContagem.includes('Diferença')
+         && linhaSobra.includes(fmt(12500)) && linhaSobra.includes('Diferença') && linhaSobra.includes('− ' + fmt(500))
+         && abAm === 12500 && status.includes('abertura de caixa de ' + dataBR(am)),
+        'Saldo do caixa fica em branco até a contagem; depois mostra o contado e a diferença, e o Finalizar o dia grava o contado como abertura de amanhã');
     }
     { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
       const pastaR = pastaComandas, d = '1999-06-06', resD = $('res-dia').value; pastaComandas = null; zerarDia(d); $('res-dia').value = d;
