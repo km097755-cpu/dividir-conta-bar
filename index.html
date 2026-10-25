@@ -807,8 +807,10 @@ function renderTotais() {
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
   $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
   $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
-  $('pos-coleta').replaceChildren(Object.assign(linha('Total', caixa - co, 'geral dia destaque'), { tabIndex: 0 })); // antes "Conferência/Caixa"
-  $('pos-coleta').lastChild.dataset.dica = `Dinheiro da gaveta: abertura + suprimento/retirada + vendas em dinheiro − compras − coleta (PIX e cartão não entram)\nVira sozinho a abertura de caixa de ${dataBR(diaSeguinte(iso))}`;
+  // Total (pedido do Kleber): abertura + suprimento/retirada + todas as vendas − saídas − coleta; sem coleta é igual a "Vendas + abertura"
+  // (o Saldo do caixa, que vira a abertura de amanhã, continua só com o dinheiro da gaveta)
+  $('pos-coleta').replaceChildren(Object.assign(linha('Total', ab + abs + dia.centavos - sa - co, 'geral dia destaque'), { tabIndex: 0 }));
+  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento/retirada + vendas (todas as formas) − coleta${sa ? ' − saídas' : ''}\nSem coleta, é igual a "Vendas + abertura de caixa"`;
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
   // Na tela só ficam as contagens com diferença ainda não lançada (com o botão para lançar); as que bateram ou já foram
   // lançadas saem da tela a pedido do Kleber e continuam no arquivo do Finalizar o dia
@@ -824,7 +826,7 @@ function renderTotais() {
     }));
     return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
   }));
-  $('contado-hint').textContent = `Esperado na gaveta agora (Total acima): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
+  $('contado-hint').textContent = `Esperado na gaveta agora (só dinheiro, sem PIX e cartão): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
   previaContagem();
   // Acima do Finalizar o dia: o que sobrou no caixa (dinheiro da gaveta), que o Finalizar grava como abertura do dia seguinte
   $('sobra-caixa').replaceChildren(comDica(linha(`Saldo do caixa (abertura de ${dataBR(diaSeguinte(iso))})`, Math.max(0, caixa - co), 'geral dia destaque'),
@@ -1502,7 +1504,7 @@ if (/[?&]teste\b/.test(location.search)) {
     gravarValor('abertura', g, 10000); gravarValor('abmanual', g, 1); somarDia(g, { dinheiro: 5000, pix: 3000, credito: 2500 }); gravarValor('saidas', g, 1000); gravarValor('coleta', g, 2000);
     puxarAbertura(diaSeguinte(g)); const amanha = lerValor('abertura', diaSeguinte(g)); // 100 + 50 − 10 − 20 = 120 (sem os 55 de PIX/crédito)
     OPERADORES[hashSenha('0003')] = 'Kelly'; const dataT = $('data').value; $('data').value = g; calcular();
-    const telaG = $('fechamento').innerText + $('pos-coleta').innerText;
+    const telaG = $('fechamento').textContent + $('sobra-caixa').textContent, totalG = $('pos-coleta').textContent; // Total = 100 + 105 − 10 − 20 = 175
     $('contado-notas').value = '100,00'; $('contado-moedas').value = '15,00'; $('contado-moedas').dispatchEvent(new Event('input'));
     const previa = $('contado-previa').innerText; // antes de registrar: notas, moedas, contado, conferência e a falta
     $('contado-senha').value = '9999'; $('contar').click(); const errSenha = $('contado-err').textContent;
@@ -1515,7 +1517,7 @@ if (/[?&]teste\b/.test(location.search)) {
     lancarDiferenca(g, 0, 'Pilar'); const naoRepete = lerMovs(g).length === 1;
     delete OPERADORES[hashSenha('0003')]; delete OPERADORES[hashSenha('0004')]; $('data').value = dataT; calcular();
     fechamentoDoDia(g, false).then(arqG => {
-      ok(amanha === 12000 && !telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
+      ok(amanha === 12000 && totalG.includes(fmt(17500)) && !telaG.includes(fmt(10500)) && telaG.includes(fmt(12000)) && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
          && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
@@ -1533,6 +1535,14 @@ if (/[?&]teste\b/.test(location.search)) {
     const ordem = [enter($('abertura')), enter($('total')), enter($('novo-valor')), enter($('coleta'))];
     ok(ordem.join() === 'total,novo-valor,nova-pag,contado-notas', 'Enter num campo passa para o próximo campo: ' + ordem.join());
     document.activeElement.blur();
+  }
+  { // Sem coleta, o Total do fechamento é igual a "Vendas + abertura de caixa" (PIX e cartão entram)
+    const g = '1999-08-21', dataT = $('data').value; limparDia(g);
+    gravarValor('abertura', g, 10000); gravarValor('abmanual', g, 1); somarDia(g, { pix: 4000, dinheiro: 1000 }); $('data').value = g; calcular();
+    const topo = $('fech-topo').textContent, tot = $('pos-coleta').textContent;
+    gravarValor('coleta', g, 3000); calcular(); const comColeta = $('pos-coleta').textContent;
+    limparDia(g); $('data').value = dataT; calcular();
+    ok(topo.includes(fmt(15000)) && tot.includes(fmt(15000)) && comColeta.includes(fmt(12000)), 'sem coleta o Total é igual a Vendas + abertura; com coleta, desconta a coleta');
   }
   { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
     let n = 0; const b = botaoConfirma('X', () => n++); b.click(); b.click(); b.click();
