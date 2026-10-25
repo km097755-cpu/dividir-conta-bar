@@ -338,6 +338,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
           <button type="button" class="btn-ghost" id="contar">Registrar contagem</button>
           <div class="totais" id="contagens" aria-live="polite"></div>
         </div>
+        <div class="totais" id="sobra-caixa" aria-live="polite"></div>
         <div class="acoes" id="acoes-fechamento"></div>
         <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads).</p>
         <div class="field">
@@ -824,6 +825,9 @@ function renderTotais() {
   }));
   $('contado-hint').textContent = `Esperado na gaveta agora (Total acima): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
   previaContagem();
+  // Acima do Finalizar o dia: o que sobrou no caixa (dinheiro da gaveta), que o Finalizar grava como abertura do dia seguinte
+  $('sobra-caixa').replaceChildren(comDica(linha(`Sobrou no caixa (vira a abertura de ${dataBR(diaSeguinte(iso))})`, Math.max(0, caixa - co), 'geral dia destaque'),
+    'Total do dinheiro da gaveta. Ao tocar em "Finalizar o dia", esse valor vira a abertura de caixa do dia seguinte.'));
   if (dia.comandas) box.append(botaoSupervisor('Zerar total do dia', op => { zerarDia(iso); calcular(); avisar(`Total do dia zerado por ${op}.`); }));
 }
 
@@ -885,7 +889,11 @@ function botaoConfirma(texto, acao) {
 // Botão "Finalizar o dia" (dois toques), no quadro Fechamento do dia
 $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', async () => {
   const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
-  $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`;
+  // O que sobrou no caixa vira a abertura do dia seguinte, fixa (vale mesmo que alguém já tenha aberto o dia seguinte)
+  const sobra = conferenciaDe(iso), amanha = diaSeguinte(iso);
+  gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
+  $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`
+    + ` Sobrou no caixa ${fmt(sobra)}: essa é a abertura de caixa de ${dataBR(amanha)}.`;
 }), { className: 'btn' }));
 // Abertura errada (a mais ou a menos): zera com a senha da Pilar ou da Solange e fica zerada (não volta a vir do dia anterior)
 function zerarAbertura(iso) { gravarValor('abertura', iso, 0); gravarValor('abmanual', iso, 1); }
@@ -1538,6 +1546,17 @@ if (/[?&]teste\b/.test(location.search)) {
       async getFile() { return { text: async () => txt }; }, async createWritable() { let b = ''; return { write: async t => { b += t; }, close: async () => { txt = b; } }; } }); } return filhos.get(n); },
     async *entries() { yield* filhos.entries(); } }; };
   (async () => {
+    { // Finalizar o dia: mostra o que sobrou no caixa e grava esse valor como abertura do dia seguinte (fixa)
+      const sf = salvarFechamento, dataS = $('data').value, g = '1999-04-10', am = diaSeguinte(g); salvarFechamento = async () => 'teste';
+      limparDia(g); limparDia(am); gravarValor('abertura', g, 10000); gravarValor('abmanual', g, 1); somarDia(g, { dinheiro: 5000, pix: 4000 }); gravarValor('coleta', g, 2000);
+      gravarValor('abertura', am, 777); gravarValor('abmanual', am, 1); // alguém já tinha digitado a abertura de amanhã
+      $('data').value = g; calcular(); const linhaSobra = $('sobra-caixa').textContent;
+      const bf = $('acoes-fechamento').querySelector('.btn'); bf.click(); bf.click(); await new Promise(r => setTimeout(r, 30));
+      const abAm = lerValor('abertura', am), status = $('fechamento-status').textContent;
+      limparDia(g); limparDia(am); salvarFechamento = sf; $('data').value = dataS; calcular();
+      ok(linhaSobra.includes('Sobrou no caixa') && linhaSobra.includes(fmt(13000)) && abAm === 13000 && status.includes('abertura de caixa de ' + dataBR(am)),
+        'Finalizar o dia mostra o que sobrou no caixa e grava esse valor como abertura do dia seguinte');
+    }
     { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
       const pastaR = pastaComandas, d = '1999-06-06', resD = $('res-dia').value; pastaComandas = null; zerarDia(d); $('res-dia').value = d;
       somarDia(d, { credito: 10000 }); guardarComanda(d, { hora: '10:00:00', formas: { credito: 10000 } }); await carregarResultados(false);
