@@ -903,11 +903,17 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`
     + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`;
 }), { className: 'btn' }));
-// Abertura errada (a mais ou a menos): zera com a senha da Pilar ou da Solange e fica zerada (não volta a vir do dia anterior)
-function zerarAbertura(iso) { gravarValor('abertura', iso, 0); gravarValor('abmanual', iso, 1); }
+// Zerar abertura de caixa (senha da Pilar ou da Solange): zera todo o caixa do dia, também o que está gravado no navegador —
+// abertura (fica 0, não volta a vir do dia anterior), suprimentos/retiradas, saídas, coleta e contagens. As vendas continuam.
+function zerarAbertura(iso) {
+  for (const t of ['abertura', 'abastecimento', 'saidas', 'coleta', 'abauto']) gravarValor(t, iso, 0);
+  gravarValor('abmanual', iso, 1);
+  delete memoriaMovs[iso]; try { localStorage.removeItem(chaveMovs(iso)); } catch {}
+  gravarContagens(iso, []);
+}
 $('abertura-zerar').append(botaoSupervisor('Zerar abertura de caixa', op => {
-  const iso = $('data').value || hojeISO(); zerarAbertura(iso); mostraValoresDia(); calcular();
-  avisar(`Abertura de caixa de ${dataBR(iso)} zerada por ${op}. Se precisar, digite o valor certo.`, 8000);
+  const iso = $('data').value || hojeISO(); zerarAbertura(iso); mostraValoresDia(); calcular(); if (!$('tela-movs').hidden) renderMovs();
+  avisar(`Caixa de ${dataBR(iso)} zerado por ${op}: abertura, suprimentos/retiradas, coleta e contagens apagados (as vendas continuam). Se precisar, digite a abertura certa.`, 10000);
 }));
 // Limpar o dia (ex.: depois de testes): apaga deste navegador tudo da data escolhida; os arquivos da pasta ficam
 function limparDia(iso) {
@@ -1499,9 +1505,13 @@ if (/[?&]teste\b/.test(location.search)) {
     limparDia('1999-08-08'); const limpo = !temMovimento('1999-08-08') && !lerMovs('1999-08-08').length && !lerDia('1999-08-08').comandas;
     limparDia('1999-08-06');
     // Zerar a abertura: fica 0 mesmo com o dia anterior tendo sobra; Limpar o dia volta ao automático
-    somarDia('1999-08-06', { dinheiro: 5000 }); zerarAbertura('1999-08-07'); puxarAbertura('1999-08-07'); const zer = lerValor('abertura', '1999-08-07');
-    limparDia('1999-08-07'); puxarAbertura('1999-08-07'); const volta = lerValor('abertura', '1999-08-07'); limparDia('1999-08-07'); limparDia('1999-08-06');
-    ok(zer === 0 && volta === 5000, 'zerar abertura fica em 0 (não puxa do dia anterior); limpar o dia volta ao automático');
+    somarDia('1999-08-06', { dinheiro: 5000 });
+    const z = '1999-08-07'; gravarValor('abertura', z, 20000); gravarMovs(z, [{ hora: '09:00:00', tipo: 'sup', valor: 3000, motivo: 't', por: 'Kelly' }]);
+    gravarValor('coleta', z, 1000); gravarValor('saidas', z, 500); gravarContagens(z, [{ hora: '18:00:00', contado: 1, esperado: 2, por: 'Kelly' }]); somarDia(z, { pix: 700 });
+    zerarAbertura(z); puxarAbertura(z); const zer = lerValor('abertura', z);
+    const caixaZerado = !lerMovs(z).length && !lerValor('abastecimento', z) && !lerValor('coleta', z) && !lerValor('saidas', z) && !lerContagens(z).length && lerDia(z).centavos === 700;
+    limparDia(z); puxarAbertura(z); const volta = lerValor('abertura', z); limparDia(z); limparDia('1999-08-06');
+    ok(zer === 0 && caixaZerado && volta === 5000, 'zerar abertura zera todo o caixa do dia (abertura, lançamentos, coleta, contagens) e mantém as vendas; limpar o dia volta ao automático');
     ok(pulo === 40000 && limpo && !temMovimento('1999-08-06'), 'dia sem movimento é pulado na abertura; Limpar o dia apaga comandas, caixa e lançamentos da data');
   }
   { // Gaveta: só dinheiro vira a abertura de amanhã (PIX e cartão vão para a conta); contagem com senha mostra sobra/falta
