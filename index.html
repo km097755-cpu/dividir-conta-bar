@@ -3,10 +3,8 @@
 <title>Bookafé</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Calculadora para dividir a conta do bar em partes iguais, com a forma de pagamento de cada pessoa.">
-<!-- Aplicativo instalável (computador, Android e iPhone): manifesto e service worker só no site (https), ver o script -->
+<!-- Aplicativo instalável (computador, Android e iPhone): manifesto e metas de app só depois da senha de um colaborador, ver o script -->
 <meta name="theme-color" content="#8e2a1f">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Bookafé">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -904,8 +902,12 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   // O Saldo do caixa (o contado na última contagem; sem contagem, o calculado) vira a abertura do dia seguinte, fixa
   const ult = lerContagens(iso).at(-1), sobra = ult ? ult.contado : conferenciaDe(iso), amanha = diaSeguinte(iso);
   gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
-  $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: fechamento completo salvo ${onde || '(não foi possível salvar o arquivo)'}.`
-    + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`;
+  // Com o fechamento salvo (tem tudo do dia), limpa a comanda aberta e os lançamentos de suprimento/retirada (pedido do Kleber);
+  // as vendas continuam nos Resultados. Se o arquivo não foi salvo, não apaga nada.
+  if (onde) { delete memoriaMovs[iso]; try { localStorage.removeItem(chaveMovs(iso)); } catch {} gravarValor('abastecimento', iso, 0); novaComanda(); mostraValoresDia(); calcular(); }
+  $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: ` + (onde ? `fechamento completo salvo ${onde}.` : 'não foi possível salvar o arquivo do fechamento (nada foi apagado; tente de novo).')
+    + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`
+    + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
 }), { className: 'btn' }));
 // Zerar abertura de caixa (senha da Pilar ou da Solange): zera todo o caixa do dia, também o que está gravado no navegador —
 // abertura (fica 0, não volta a vir do dia anterior), suprimentos/retiradas, saídas, coleta e contagens. As vendas continuam.
@@ -956,14 +958,21 @@ $('contar').addEventListener('click', () => {
 });
 // Aplicativo instalável (computador, Android e iPhone): só no site do GitHub Pages (ou localhost, para testar);
 // no pen-drive (file://) e no artifact não liga nada. O service worker deixa abrir sem internet.
+// A instalação só é oferecida depois da senha de um colaborador (destravar chama ligarInstalacao).
+let ligarInstalacao = () => {};
 if ('serviceWorker' in navigator && ((location.protocol === 'https:' && location.hostname.endsWith('github.io')) || location.hostname === 'localhost')) {
-  document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: 'manifest.webmanifest' }));
+  ligarInstalacao = () => {
+    if (document.querySelector('link[rel="manifest"]')) return;
+    const meta = (name, content) => document.head.append(Object.assign(document.createElement('meta'), { name, content }));
+    meta('apple-mobile-web-app-capable', 'yes'); meta('mobile-web-app-capable', 'yes');
+    document.head.append(Object.assign(document.createElement('link'), { rel: 'manifest', href: 'manifest.webmanifest' }));
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) $('instalar-ios').hidden = false; // iPhone: só pelo Safari
+  };
   navigator.serviceWorker.register('sw.js').catch(() => {});
   let pedido = null; // Chrome/Edge/Android: botão "Instalar o aplicativo"
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedido = e; $('instalar').hidden = false; });
   $('instalar').addEventListener('click', async () => { if (!pedido) return; pedido.prompt(); await pedido.userChoice; pedido = null; $('instalar').hidden = true; });
   addEventListener('appinstalled', () => { $('instalar').hidden = true; });
-  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) $('instalar-ios').hidden = false; // iPhone: só pelo Safari
 }
 // Enter num campo passa para o próximo campo da tela. No último campo de um formulário com botão (ex.: Lançar) o Enter envia;
 // na senha de quem contou, registra a contagem; as senhas dos botões com senha continuam com o Enter delas.
@@ -1085,7 +1094,7 @@ renderLista(); calcular(); mostraQuemFecha();
 // Abrir o caixa: o app abre travado e só libera com a senha de um colaborador; quem abre já fica como quem fecha as contas.
 // Fica só na memória da página: fechar ou recarregar o app pede a senha de novo.
 function travar() { $('trava').hidden = false; document.querySelector('.wrap').inert = true; $('trava-senha').value = ''; $('trava-err').textContent = ''; $('trava-senha').focus(); }
-function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); }
+function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); ligarInstalacao(); }
 function tentarAbrir() {
   const op = operadorDa($('trava-senha').value);
   if (!op) { $('trava-err').textContent = 'Senha errada.'; $('trava-senha').value = ''; return $('trava-senha').focus(); }
@@ -1585,14 +1594,16 @@ if (/[?&]teste\b/.test(location.search)) {
       limparDia(g); limparDia(am); gravarValor('abertura', g, 10000); gravarValor('abmanual', g, 1); somarDia(g, { dinheiro: 5000, pix: 4000 }); gravarValor('coleta', g, 2000);
       gravarValor('abertura', am, 777); gravarValor('abmanual', am, 1); // alguém já tinha digitado a abertura de amanhã
       $('data').value = g; calcular(); const semContagem = $('sobra-caixa').textContent;
-      gravarContagens(g, [{ hora: '18:00:00', contado: 12500, notas: 12000, moedas: 500, esperado: 13000, por: 'Kelly' }]); calcular();
+      gravarContagens(g, [{ hora: '18:00:00', contado: 12500, notas: 12000, moedas: 500, esperado: 13000, por: 'Kelly' }]);
+      gravarMovs(g, [{ hora: '09:00:00', tipo: 'sup', valor: 1000, motivo: 'troco', por: 'Kelly' }]); $('total').value = '33,00'; calcular();
       const linhaSobra = $('sobra-caixa').textContent;
       const bf = $('acoes-fechamento').querySelector('.btn'); bf.click(); bf.click(); await new Promise(r => setTimeout(r, 30));
       const abAm = lerValor('abertura', am), status = $('fechamento-status').textContent;
+      const limpou = !lerMovs(g).length && !lerValor('abastecimento', g) && $('total').value === '' && lerDia(g).centavos === 9000;
       limparDia(g); limparDia(am); salvarFechamento = sf; $('data').value = dataS; calcular();
       ok(semContagem.includes('Saldo do caixa (abertura de ' + dataBR(am) + ')') && !semContagem.includes('R$') && !semContagem.includes('Diferença')
          && linhaSobra.includes(fmt(12500)) && linhaSobra.includes('Diferença') && linhaSobra.includes('− ' + fmt(500))
-         && abAm === 12500 && status.includes('abertura de caixa de ' + dataBR(am)),
+         && abAm === 12500 && status.includes('abertura de caixa de ' + dataBR(am)) && limpou,
         'Saldo do caixa fica em branco até a contagem; depois mostra o contado e a diferença, e o Finalizar o dia grava o contado como abertura de amanhã');
     }
     { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
