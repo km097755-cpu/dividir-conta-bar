@@ -333,7 +333,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
           <div class="totais" id="contado-previa" aria-live="polite"></div>
           <label for="contado-senha">Senha de quem contou (4 dígitos)</label>
           <input type="password" id="contado-senha" class="plain" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••">
-          <div class="hint" id="contado-hint"></div>
+          <div class="hint" id="contado-hint">Contagem de notas e moedas: digite cada valor e finalize com a senha.</div>
           <div class="err" id="contado-err" role="alert"></div>
           <button type="button" class="btn-ghost" id="contar">Registrar contagem</button>
           <div class="totais" id="contagens" aria-live="polite"></div>
@@ -829,7 +829,6 @@ function renderTotais() {
     }));
     return comDica(el, `Contado ${fmt(c.contado)} · esperado ${fmt(c.esperado)} na hora da contagem`);
   }));
-  $('contado-hint').textContent = `Esperado na gaveta agora (só dinheiro, sem PIX e cartão): ${fmt(caixa - co)}. Conte as notas e as moedas, digite cada valor e a senha de quem contou.`;
   previaContagem();
   // Acima do Finalizar o dia: Saldo do caixa = o que foi contado na última contagem (em branco até contar) e, embaixo, a diferença;
   // o Finalizar grava o Saldo como abertura do dia seguinte
