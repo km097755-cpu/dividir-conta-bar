@@ -64,6 +64,7 @@ h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; margin
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px }
 .mov-motivo { display: block; font-size: .82rem } /* motivo do suprimento/retirada, embaixo da linha */
 .mov-caixa { font-weight: 600 }
+.mov-fechado { text-decoration: line-through; opacity: .6 } /* lançamento de dia já finalizado: fica riscado na lista */
 .trava { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: grid; place-items: center; padding: 16px } /* tela de abrir o caixa */
 .trava-caixa { width: min(380px, 100%); display: grid; gap: 12px }
 .trava-caixa input { font: inherit; color: var(--ink); background: var(--bg); padding: 10px 12px; width: 100% }
@@ -214,7 +215,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
       <section aria-labelledby="h-mov-lista">
         <h2 id="h-mov-lista">Lançamentos do dia</h2>
         <div class="panel totais" id="mov-lista" aria-live="polite"></div>
-        <p class="hint">Cada lançamento entra no Valor total do caixa e vai junto no arquivo do "Finalizar o dia". Digitou errado? Toque em "Corrigir" no lançamento e digite a senha de um colaborador: ele sai da lista e do saldo, e fica registrado no arquivo do "Finalizar o dia" com quem corrigiu. Depois lance de novo o valor certo.</p>
+        <p class="hint">Cada lançamento entra no Valor total do caixa e vai junto no arquivo do "Finalizar o dia". Digitou errado? Toque em "Corrigir" no lançamento e digite a senha de um colaborador: ele sai da lista e do saldo, e fica registrado no arquivo do "Finalizar o dia" com quem corrigiu. Depois lance de novo o valor certo. No "Finalizar o dia", os lançamentos ficam riscados aqui e o dia seguinte começa sem eles.</p>
       </section>
     </div>
   </section>
@@ -508,7 +509,7 @@ async function fechamentoDoDia(iso, comPasta) {
     ...[...lerComandasDia(iso)].sort((a, b) => a.hora < b.hora ? -1 : 1)
       .map(c => [c.hora, ...Object.keys(PAGAMENTOS).map(k => reais(c.formas[k] || 0)), reais(Object.values(c.formas).reduce((a, b) => a + b, 0))]),
     [], ['Suprimentos e retiradas', 'Hora', 'Valor (R$)', 'Motivo', 'Lançado por', 'Corrigido (não conta)'],
-    ...lerMovs(iso).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, m.corrigido ? '0,00' : (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por,
+    ...lerMovs(iso).filter(m => !m.fechado).map(m => [m.tipo === 'sup' ? 'Suprimento' : 'Retirada', m.hora, m.corrigido ? '0,00' : (m.tipo === 'sup' ? '' : '-') + reais(m.valor), m.motivo.replace(/;/g, ','), m.por,
       m.corrigido ? `por ${m.corrigido.por} às ${m.corrigido.hora} (era ${reais(m.valor)})` : '']),
     [], ['Contagem da gaveta', 'Hora', 'Notas (R$)', 'Moedas (R$)', 'Contado (R$)', 'Esperado (R$)', 'Diferença (R$)', 'Contado por', 'Diferença lançada no caixa'],
     ...lerContagens(iso).map(c => ['Contagem', c.hora, c.notas != null ? reais(c.notas) : '', c.moedas != null ? reais(c.moedas) : '', reais(c.contado), reais(c.esperado), reais(c.contado - c.esperado), c.por,
@@ -904,9 +905,9 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   // O Saldo do caixa (o contado na última contagem; sem contagem, o calculado) vira a abertura do dia seguinte, fixa
   const ult = lerContagens(iso).at(-1), sobra = ult ? ult.contado : conferenciaDe(iso), amanha = diaSeguinte(iso);
   gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
-  // Com o fechamento salvo (tem tudo do dia), limpa a comanda aberta e os lançamentos de suprimento/retirada (pedido do Kleber);
-  // as vendas continuam nos Resultados. Se o arquivo não foi salvo, não apaga nada.
-  if (onde) { delete memoriaMovs[iso]; try { localStorage.removeItem(chaveMovs(iso)); } catch {} gravarValor('abastecimento', iso, 0); novaComanda(); mostraValoresDia(); calcular(); }
+  // Com o fechamento salvo (tem tudo do dia), limpa a comanda aberta e risca os lançamentos de suprimento/retirada (fechado:
+  // ficam na lista, fora do saldo; o dia seguinte começa sem eles). As vendas continuam nos Resultados. Sem arquivo, não mexe em nada.
+  if (onde) { gravarMovs(iso, lerMovs(iso).map(m => ({ ...m, fechado: true }))); novaComanda(); mostraValoresDia(); calcular(); if (!$('tela-movs').hidden) renderMovs(); }
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: ` + (onde ? `fechamento completo salvo ${onde}.` : 'não foi possível salvar o arquivo do fechamento (nada foi apagado; tente de novo).')
     + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`
     + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
@@ -1314,8 +1315,8 @@ document.querySelector('.abas').addEventListener('keydown', e => {
 // Suprimento/Retirada: cada lançamento com tipo, valor, motivo, quem lançou (senha de colaborador) e hora.
 // O saldo (suprimentos − retiradas) fica guardado como 'abastecimento' do dia, que as contas do caixa já usam.
 const memoriaMovs = {}, chaveMovs = iso => 'bookafe-movs-' + iso;
-// Lançamento corrigido (digitado errado) fica na lista riscado, com quem corrigiu, e não conta no saldo
-const saldoMovs = l => l.reduce((a, m) => a + (m.corrigido ? 0 : m.tipo === 'sup' ? m.valor : -m.valor), 0);
+// Lançamento corrigido (digitado errado) ou de dia já finalizado (fechado) não conta no saldo
+const saldoMovs = l => l.reduce((a, m) => a + (m.corrigido || m.fechado ? 0 : m.tipo === 'sup' ? m.valor : -m.valor), 0);
 function corrigirMov(iso, i, por) {
   const l = lerMovs(iso).map((m, j) => j === i && !m.corrigido ? { ...m, corrigido: { por, hora: horaAgora() } } : m);
   gravarMovs(iso, l); return l[i];
@@ -1332,12 +1333,18 @@ function renderMovs() {
   const iso = $('data').value || hojeISO(), l = lerMovs(iso), span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
   const linhaM = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
   $('mov-dia').textContent = `Dia ${dataBR(iso)} (a data do quadro Caixa, na aba Comanda).`;
-  const vale = l.filter(m => !m.corrigido), sup = vale.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = vale.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
+  const vale = l.filter(m => !m.corrigido && !m.fechado), sup = vale.filter(m => m.tipo === 'sup').reduce((a, m) => a + m.valor, 0), ret = vale.filter(m => m.tipo === 'ret').reduce((a, m) => a + m.valor, 0);
   const ab = lerValor('abertura', iso); let caixa = ab; // caixa vai somando (suprimento) ou tirando (retirada) a cada lançamento
   // Lançamento corrigido sai da lista (a pedido do Kleber), mas continua guardado e vai no arquivo do Finalizar o dia
   const visiveis = l.map((m, i) => [m, i]).filter(([m]) => !m.corrigido), corrigidos = l.length - visiveis.length;
   $('mov-lista').replaceChildren(linhaM('Abertura de caixa', fmt(ab)),
     ...(visiveis.length ? visiveis.map(([m, i]) => {
+      // Dia finalizado: o lançamento fica riscado (a pedido do Kleber), sem Corrigir e fora do caixa; o dia seguinte começa sem ele
+      if (m.fechado) {
+        const d = document.createElement('div'), esq = span(`${m.tipo === 'sup' ? 'S' : 'R'} · ${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`, 'mov-fechado');
+        esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }));
+        d.append(esq, span((m.tipo === 'sup' ? '+ ' : '− ') + fmt(m.valor), 'mov-fechado')); return d;
+      }
       caixa += m.tipo === 'sup' ? m.valor : -m.valor;
       const d = document.createElement('div'), esq = span(`${m.tipo === 'sup' ? 'S' : 'R'} · ${m.hora.slice(0, 5)} · ${m.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${m.por}`);
       esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: m.motivo }),
@@ -1608,12 +1615,13 @@ if (/[?&]teste\b/.test(location.search)) {
       const linhaSobra = $('sobra-caixa').textContent;
       const bf = $('acoes-fechamento').querySelector('.btn'); bf.click(); bf.click(); await new Promise(r => setTimeout(r, 30));
       const abAm = lerValor('abertura', am), status = $('fechamento-status').textContent;
-      const limpou = !lerMovs(g).length && !lerValor('abastecimento', g) && $('total').value === '' && lerDia(g).centavos === 9000;
+      renderMovs(); const riscado = lerMovs(g).every(m => m.fechado) && $('mov-lista').querySelectorAll('.mov-fechado').length === 2 && !$('mov-lista').querySelector('.liberar');
+      const limpou = riscado && lerMovs(g).length === 1 && !lerValor('abastecimento', g) && $('total').value === '' && lerDia(g).centavos === 9000;
       limparDia(g); limparDia(am); salvarFechamento = sf; $('data').value = dataS; calcular();
       ok(semContagem.includes('Saldo do caixa (abertura de ' + dataBR(am) + ')') && !semContagem.includes('R$') && !semContagem.includes('Diferença')
          && linhaSobra.includes(fmt(12500)) && linhaSobra.includes('Diferença') && linhaSobra.includes('− ' + fmt(500))
          && abAm === 12500 && status.includes('abertura de caixa de ' + dataBR(am)) && limpou,
-        'Saldo do caixa fica em branco até a contagem; depois mostra o contado e a diferença, e o Finalizar o dia grava o contado como abertura de amanhã');
+        'Saldo do caixa fica em branco até a contagem; depois mostra o contado e a diferença, e o Finalizar o dia grava o contado como abertura de amanhã e risca os lançamentos');
     }
     { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
       const pastaR = pastaComandas, d = '1999-06-06', resD = $('res-dia').value; pastaComandas = null; zerarDia(d); $('res-dia').value = d;
