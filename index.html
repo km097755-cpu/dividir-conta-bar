@@ -932,11 +932,15 @@ function lerContado() {
 }
 // Antes de registrar: notas, moedas, contado e a comparação com a Conferência/Caixa (sobrou ou faltou)
 function previaContagem() {
-  const c = lerContado(), esp = gavetaDe($('data').value || hojeISO()), d = c.total - esp;
+  const iso = $('data').value || hojeISO(), c = lerContado(), esp = gavetaDe(iso), d = c.total - esp;
+  // Mostra de onde vem o esperado: Total do fechamento − PIX e cartão (vão para a conta) = dinheiro esperado na gaveta
+  const dia = lerDia(iso), naoGaveta = dia.centavos - ((dia.formas || {}).dinheiro || 0), total = esp + naoGaveta;
   const mk = (a, b, cls) => { const el = document.createElement('div'); if (cls) el.className = cls; el.append(Object.assign(document.createElement('span'), { textContent: a }), Object.assign(document.createElement('span'), { textContent: b })); return el; };
   if (c.vazio || !c.ok) return $('contado-previa').replaceChildren();
   $('contado-previa').replaceChildren(mk('Notas', fmt(c.notas)), mk('Moedas', fmt(c.moedas)), mk('Contado (notas + moedas)', fmt(c.total), 'geral'),
-    mk('Total (esperado na gaveta)', fmt(esp)), mk(difTxt(d), d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0), d < 0 ? 'falta' : d > 0 ? 'sobra' : ''));
+    mk('Total', fmt(total)), mk('− PIX e cartão (vão para a conta, não ficam na gaveta)', `− ${fmt(naoGaveta)}`),
+    mk('Esperado em dinheiro na gaveta', fmt(esp), 'geral'),
+    mk(difTxt(d), d > 0 ? `+ ${fmt(d)}` : d < 0 ? `− ${fmt(-d)}` : fmt(0), d < 0 ? 'falta' : d > 0 ? 'sobra' : ''));
 }
 for (const id of ['contado-notas', 'contado-moedas']) $(id).addEventListener('input', previaContagem);
 $('contar').addEventListener('click', () => {
@@ -1523,7 +1527,7 @@ if (/[?&]teste\b/.test(location.search)) {
     OPERADORES[hashSenha('0003')] = 'Kelly'; const dataT = $('data').value; $('data').value = g; calcular();
     const telaG = $('fechamento').textContent + $('sobra-caixa').textContent, totalG = $('pos-coleta').textContent; // Total = 100 + 105 − 10 − 20 = 175
     $('contado-notas').value = '100,00'; $('contado-moedas').value = '15,00'; $('contado-moedas').dispatchEvent(new Event('input'));
-    const previa = $('contado-previa').innerText; // antes de registrar: notas, moedas, contado, conferência e a falta
+    const previa = $('contado-previa').textContent; // antes de registrar: notas, moedas, contado, conferência e a falta
     $('contado-senha').value = '9999'; $('contar').click(); const errSenha = $('contado-err').textContent;
     $('contado-senha').value = '0003'; $('contar').click(); const cont = lerContagens(g), listaC = $('contagens').innerText, previaLimpa = $('contado-previa').innerText.trim() === '';
     $('contado-notas').value = '120,00'; $('contado-senha').value = '0003'; $('contar').click(); const listaC2 = $('contagens').textContent;
@@ -1537,7 +1541,7 @@ if (/[?&]teste\b/.test(location.search)) {
       ok(amanha === 12000 && totalG.includes(fmt(17500)) && !telaG.includes(fmt(10500)) && !telaG.includes(fmt(12000)) && telaG.includes('Saldo do caixa') && !telaG.includes('Total na gaveta') && telaG.includes('Saídas (lançadas antes)') && $('saidas').closest('.field').hidden
          && errSenha.startsWith('Senha errada') && cont.length === 1 && cont[0].esperado === 12000 && cont[0].por === 'Kelly'
          && cont[0].contado === 11500 && cont[0].notas === 10000 && cont[0].moedas === 1500 && previaLimpa
-         && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500)].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
+         && [fmt(10000), fmt(1500), fmt(11500), fmt(12000), 'Faltou ' + fmt(500), '− ' + fmt(500), 'Total' + fmt(17500), '− ' + fmt(5500), 'Esperado em dinheiro na gaveta'].every(x => previa.includes(x)) && listaC.includes('moedas ' + fmt(1500))
          && listaC.includes('Faltou ' + fmt(500)) && listaC.includes('− ' + fmt(500)) && !listaC2.includes('Bateu certo') && listaC2.includes('Faltou ' + fmt(500))
          && arqG.includes('PIX e cartão (vai para a conta, não fica na gaveta);55,00') && arqG.includes(';115,00\r\nComandas finalizadas') && arqG.includes('Contagem;') && arqG.includes(';100,00;15,00;115,00;120,00;-5,00;Kelly;por Pilar às '),
          'gaveta só com dinheiro vira a abertura de amanhã; contagem com senha mostra sobra/falta e vai no fechamento');
