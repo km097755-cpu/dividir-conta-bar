@@ -323,7 +323,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
         </div>
         <div class="totais" id="pos-coleta" aria-live="polite"></div>
         <div class="field">
-          <span class="field-title">Dinheiro contado na gaveta</span>
+          <span class="field-title">Contagem caixa</span>
           <label for="contado-notas">Notas</label>
           <div class="money"><span aria-hidden="true">R$</span><input type="text" id="contado-notas" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="contado-hint contado-err"></div>
           <label for="contado-moedas">Moedas</label>
@@ -1614,13 +1614,15 @@ if (/[?&]teste\b/.test(location.search)) {
       gravarMovs(g, [{ hora: '09:00:00', tipo: 'sup', valor: 1000, motivo: 'troco', por: 'Kelly' }]); $('total').value = '33,00'; calcular();
       const linhaSobra = $('sobra-caixa').textContent;
       const bf = $('acoes-fechamento').querySelector('.btn'); bf.click(); bf.click(); await new Promise(r => setTimeout(r, 30));
+      // dia seguinte fechado (ex.: domingo): o próximo dia que abrir puxa o mesmo contado
+      const depois = somaDiasISO(g, 2); limparDia(depois); puxarAbertura(depois); const abDepois = lerValor('abertura', depois); limparDia(depois);
       const abAm = lerValor('abertura', am), status = $('fechamento-status').textContent;
       renderMovs(); const riscado = lerMovs(g).every(m => m.fechado) && $('mov-lista').querySelectorAll('.mov-fechado').length === 2 && !$('mov-lista').querySelector('.liberar');
       const limpou = riscado && lerMovs(g).length === 1 && !lerValor('abastecimento', g) && $('total').value === '' && lerDia(g).centavos === 9000;
       limparDia(g); limparDia(am); salvarFechamento = sf; $('data').value = dataS; calcular();
       ok(semContagem.includes('Saldo do caixa (abertura de ' + dataBR(am) + ')') && !semContagem.includes('R$') && !semContagem.includes('Diferença')
          && linhaSobra.includes(fmt(12500)) && linhaSobra.includes('Diferença') && linhaSobra.includes('− ' + fmt(500))
-         && abAm === 12500 && status.includes('abertura de caixa de ' + dataBR(am)) && limpou,
+         && abAm === 12500 && abDepois === 12500 && status.includes('abertura de caixa de ' + dataBR(am)) && limpou,
         'Saldo do caixa fica em branco até a contagem; depois mostra o contado e a diferença, e o Finalizar o dia grava o contado como abertura de amanhã e risca os lançamentos');
     }
     { // Resultado do dia: a % de cada forma aparece na linha e muda a cada comanda finalizada
