@@ -878,7 +878,8 @@ function conferenciaDe(iso) { return Math.max(0, gavetaDe(iso)); }
 // dia anterior antes). Só troca a abertura se ela está vazia ou foi o app que pôs ('abauto-AAAA-MM-DD'; a versão
 // antiga punha a coleta do dia anterior). Abertura digitada ('abmanual-AAAA-MM-DD') ou de antes desta versão fica.
 // Dia em que o app não foi aberto (ex.: café fechado) não tem nada guardado: a abertura vem do último dia com movimento (até 31 dias antes)
-function temMovimento(d) { return lerDia(d).comandas > 0 || VALORES_DIA.some(t => lerValor(t, d)); } // function: usada no carregamento, antes desta linha
+// Dia zerado de propósito (abmanual, abertura 0) conta como dia com movimento: o dia seguinte abre com o que sobrou nele (0)
+function temMovimento(d) { return lerDia(d).comandas > 0 || VALORES_DIA.some(t => lerValor(t, d)) || !!lerValor('abmanual', d); } // function: usada no carregamento, antes desta linha
 function diaAnteriorComMovimento(iso) { let d = somaDiasISO(iso, -1); for (let i = 0; i < 31 && !temMovimento(d); i++) d = somaDiasISO(d, -1); return d; }
 function puxarAbertura(iso) {
   if (lerValor('abmanual', iso)) return;
@@ -959,7 +960,7 @@ $('contar').addEventListener('click', () => {
 });
 // Aplicativo instalável (computador, Android e iPhone): só no site do GitHub Pages (ou localhost, para testar);
 // no pen-drive (file://) e no artifact não liga nada. O service worker deixa abrir sem internet.
-// A instalação só é oferecida depois da senha de um colaborador (destravar chama ligarInstalacao).
+// A instalação só é oferecida depois da senha de quem pode instalar (INSTALAM; destravar chama ligarInstalacao).
 let ligarInstalacao = () => {};
 if ('serviceWorker' in navigator && ((location.protocol === 'https:' && location.hostname.endsWith('github.io')) || location.hostname === 'localhost')) {
   ligarInstalacao = () => {
@@ -989,8 +990,9 @@ document.addEventListener('keydown', e => {
   if (prox) { prox.focus(); if (prox.type === 'text' || prox.type === 'password') prox.select(); }
 });
 $('acoes-fechamento').append(botaoSupervisor('Limpar o dia (apagar testes)', op => {
-  const iso = $('data').value || hojeISO(); limparDia(iso); mostraValoresDia(); calcular();
-  $('fechamento-status').textContent = `Dia ${dataBR(iso)} limpo por ${op}: comandas, abertura, suprimentos/retiradas, saídas e coleta apagados deste navegador (os arquivos da pasta continuam lá).`;
+  // Tudo zerado (pedido do Kleber): a abertura fica 0 fixa e não volta a vir do dia anterior; digite a certa se precisar
+  const iso = $('data').value || hojeISO(); limparDia(iso); gravarValor('abmanual', iso, 1); mostraValoresDia(); calcular(); if (!$('tela-movs').hidden) renderMovs();
+  $('fechamento-status').textContent = `Dia ${dataBR(iso)} limpo por ${op}: comandas, abertura (fica 0,00), suprimentos/retiradas, saídas, coleta e contagens apagados deste navegador (os arquivos da pasta continuam lá).`;
 }));
 
 function calcular() { calcularResultado(); renderTotais(); }
@@ -1095,7 +1097,9 @@ renderLista(); calcular(); mostraQuemFecha();
 // Abrir o caixa: o app abre travado e só libera com a senha de um colaborador; quem abre já fica como quem fecha as contas.
 // Fica só na memória da página: fechar ou recarregar o app pede a senha de novo.
 function travar() { $('trava').hidden = false; document.querySelector('.wrap').inert = true; $('trava-senha').value = ''; $('trava-err').textContent = ''; $('trava-senha').focus(); }
-function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); ligarInstalacao(); }
+// Instalar o aplicativo: só quem abre o caixa com a senha da Pilar (pedido do Kleber)
+const INSTALAM = ['Pilar'];
+function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); if (INSTALAM.includes(op)) ligarInstalacao(); }
 function tentarAbrir() {
   const op = operadorDa($('trava-senha').value);
   if (!op) { $('trava-err').textContent = 'Senha errada.'; $('trava-senha').value = ''; return $('trava-senha').focus(); }
@@ -1526,8 +1530,12 @@ if (/[?&]teste\b/.test(location.search)) {
     gravarValor('coleta', z, 1000); gravarValor('saidas', z, 500); gravarContagens(z, [{ hora: '18:00:00', contado: 1, esperado: 2, por: 'Kelly' }]); somarDia(z, { pix: 700 });
     zerarAbertura(z); puxarAbertura(z); const zer = lerValor('abertura', z);
     const caixaZerado = !lerMovs(z).length && !lerValor('abastecimento', z) && !lerValor('coleta', z) && !lerValor('saidas', z) && !lerContagens(z).length && lerDia(z).centavos === 700;
+    // o dia seguinte a um dia zerado abre com 0 (não pula para o dia de antes, que tinha 50)
+    for (const d of ['1999-08-15', '1999-08-16', '1999-08-17']) limparDia(d);
+    somarDia('1999-08-15', { dinheiro: 5000 }); zerarAbertura('1999-08-16'); puxarAbertura('1999-08-17'); const amanhaZero = lerValor('abertura', '1999-08-17');
+    for (const d of ['1999-08-15', '1999-08-16', '1999-08-17']) limparDia(d);
     limparDia(z); puxarAbertura(z); const volta = lerValor('abertura', z); limparDia(z); limparDia('1999-08-06');
-    ok(zer === 0 && caixaZerado && volta === 5000, 'zerar abertura zera todo o caixa do dia (abertura, lançamentos, coleta, contagens) e mantém as vendas; limpar o dia volta ao automático');
+    ok(zer === 0 && caixaZerado && amanhaZero === 0 && volta === 5000, 'zerar abertura zera todo o caixa do dia (abertura, lançamentos, coleta, contagens), mantém as vendas e o dia seguinte abre com 0');
     ok(pulo === 40000 && limpo && !temMovimento('1999-08-06'), 'dia sem movimento é pulado na abertura; Limpar o dia apaga comandas, caixa e lançamentos da data');
   }
   { // Gaveta: só dinheiro vira a abertura de amanhã (PIX e cartão vão para a conta); contagem com senha mostra sobra/falta
