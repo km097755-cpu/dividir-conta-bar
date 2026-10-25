@@ -805,12 +805,15 @@ function renderTotais() {
   // Saídas digitadas antes de o campo sair da tela continuam na conta: aparecem aqui só se houver valor no dia
   $('fechamento').replaceChildren(...(sa ? [comDica(linha('Saídas (lançadas antes)', sa), 'Para dinheiro que sai do caixa, use Retirada na aba Suprimento/Retirada')] : []));
   // Acima das Saídas: vendas + abertura (com o suprimento); embaixo: Conferência/Caixa = abertura + vendas − compras − coleta
-  $('fech-topo').replaceChildren(Object.assign(linha('Vendas + abertura de caixa', ab + abs + dia.centavos, 'geral destaque'), { tabIndex: 0 }));
-  $('fech-topo').lastChild.dataset.dica = `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)} + vendas ${fmt(dia.centavos)}`;
+  // Topo (pedido do Kleber): Abertura de caixa, Vendas e Total = abertura + vendas (a abertura inclui o saldo de suprimento/retirada)
+  $('fech-topo').replaceChildren(
+    comDica(linha('Abertura de caixa', ab + abs), abs ? `Abertura ${fmt(ab)} + suprimento/retirada ${fmt(abs)}` : `Abertura ${fmt(ab)}`),
+    comDica(linha('Vendas', dia.centavos), 'Todas as vendas do dia (PIX, cartão e dinheiro)'),
+    comDica(linha('Total', ab + abs + dia.centavos, 'geral destaque'), 'Abertura de caixa + vendas'));
   // Total (pedido do Kleber): abertura + suprimento/retirada + todas as vendas − saídas − coleta; sem coleta é igual a "Vendas + abertura"
   // (o Saldo do caixa, que vira a abertura de amanhã, continua só com o dinheiro da gaveta)
   $('pos-coleta').replaceChildren(Object.assign(linha('Total', ab + abs + dia.centavos - sa - co, 'geral dia destaque'), { tabIndex: 0 }));
-  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento/retirada + vendas (todas as formas) − coleta${sa ? ' − saídas' : ''}\nSem coleta, é igual a "Vendas + abertura de caixa"`;
+  $('pos-coleta').lastChild.dataset.dica = `Abertura + suprimento/retirada + vendas (todas as formas) − coleta${sa ? ' − saídas' : ''}\nSem coleta, é igual ao Total do topo (abertura + vendas)`;
   // Contagem da gaveta: cada contagem com quem contou e se sobrou ou faltou em relação ao esperado naquela hora
   // Na tela só ficam as contagens com diferença ainda não lançada (com o botão para lançar); as que bateram ou já foram
   // lançadas saem da tela a pedido do Kleber e continuam no arquivo do Finalizar o dia
@@ -1557,7 +1560,7 @@ if (/[?&]teste\b/.test(location.search)) {
     const topo = $('fech-topo').textContent, tot = $('pos-coleta').textContent;
     gravarValor('coleta', g, 3000); calcular(); const comColeta = $('pos-coleta').textContent;
     limparDia(g); $('data').value = dataT; calcular();
-    ok(topo.includes(fmt(15000)) && tot.includes(fmt(15000)) && comColeta.includes(fmt(12000)), 'sem coleta o Total é igual a Vendas + abertura; com coleta, desconta a coleta');
+    ok(topo.includes('Abertura de caixa' + fmt(10000)) && topo.includes('Vendas' + fmt(5000)) && topo.includes('Total' + fmt(15000)) && tot.includes(fmt(15000)) && comColeta.includes(fmt(12000)), 'sem coleta o Total é igual a Vendas + abertura; com coleta, desconta a coleta');
   }
   { // Finalizar o dia: dois toques fazem uma vez; o 3º toque volta a pedir confirmação
     let n = 0; const b = botaoConfirma('X', () => n++); b.click(); b.click(); b.click();
