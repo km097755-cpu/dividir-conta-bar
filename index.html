@@ -414,11 +414,23 @@ const operadorDa = pin => /^\d{4}$/.test(pin) ? OPERADORES[hashSenha(pin)] || nu
 function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
   return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
 }
-// Cópia da comanda em CSV (abre no Excel): separador ";" e BOM para os acentos
+// Cópia da comanda em CSV (abre no Excel): separador ";" e BOM para os acentos.
+// Colunas PIX, Débito, Crédito e Dinheiro (o valor pago de cada pessoa cai na coluna da sua forma) e, no fim, o Subtotal de vendas de cada forma e o Total geral.
+const CAB_CSV = 'Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por;PIX (R$);Débito (R$);Crédito (R$);Dinheiro (R$);Total (R$)';
+const celulaCsv = v => /[;"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+const colunasForma = (rotulo, valor) => Object.values(PAGAMENTOS).map(n => n === rotulo ? valor : '');
+// comandas [{ total, formas, valores }] -> as duas linhas do fim: subtotal por forma (troco já descontado) e total geral
+function linhasSubtotal(comandas) {
+  const s = somaDias([...diasDasComandas(comandas.map(c => ({ iso: '-', ...c }))).values()]);
+  return [['Subtotal de vendas (troco já descontado)', '', '', '', '', '', '', ...Object.keys(PAGAMENTOS).map(k => reais(s.formas[k] || 0)), ''],
+    ['Total geral das comandas', '', '', '', '', '', '', '', '', '', '', reais(s.centavos)]];
+}
 function csvComanda(data, comanda, totalCentavos, lista, partes, fechadoPor = '') {
-  const linhas = [['Data', 'Comanda', 'Total da conta (R$)', 'Pessoa', 'Forma de pagamento', 'Valor pago (R$)', 'Fechado por'],
-    ...lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i]), fechadoPor])];
-  return '﻿' + linhas.map(l => l.map(v => /[;"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(';')).join('\r\n') + '\r\n';
+  const linhas = [CAB_CSV.split(';'),
+    ...lista.map((p, i) => { const forma = PAGAMENTOS[p.pag] || 'Sem forma';
+      return [data, comanda, reais(totalCentavos), nomeSeguro(p, i), forma, reais(partes[i]), fechadoPor, ...colunasForma(forma, reais(partes[i])), '']; }),
+    ...linhasSubtotal([{ total: totalCentavos, formas: lista.map(p => p.pag), valores: partes }])];
+  return '﻿' + linhas.map(l => l.map(celulaCsv).join(';')).join('\r\n') + '\r\n';
 }
 
 // Pasta das comandas (Chrome/Edge no computador). A pasta escolhida fica lembrada neste navegador.
@@ -456,15 +468,20 @@ async function* arquivosComanda(raiz) {
 
 // Cópia geral (diária ou semanal): todas as linhas de pagamento dos dias + o Resumo do caixa de cada dia
 function copiaGeral(dias, porDia) {
-  const linhas = ['Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por'], resumo = [];
+  const linhas = [CAB_CSV], resumo = [], todas = [];
   for (const d of dias) {
     const textos = porDia.get(d) || [];
-    for (const t of textos) linhas.push(...t.replace(/^﻿/, '').split(/\r?\n/).slice(1).filter(l => l.trim()));
-    const v = diasDasComandas(textos.flatMap(t => comandasDoCsv(t) || [])).get(d) || { centavos: 0, comandas: 0, formas: {} };
+    for (const t of textos) for (const l of t.replace(/^﻿/, '').split(/\r?\n/).slice(1)) { // só linhas de pagamento (com data); os subtotais de cada arquivo ficam de fora
+      const c = camposCsv(l); if (!/^\d{2}\/\d{2}\/\d{4}$/.test(c[0] || '')) continue;
+      linhas.push([...c.slice(0, 7), ...colunasForma(c[4], c[5]), ''].map(celulaCsv).join(';'));
+    }
+    const cms = textos.flatMap(t => comandasDoCsv(t) || []); todas.push(...cms);
+    const v = diasDasComandas(cms).get(d) || { centavos: 0, comandas: 0, formas: {} };
     const ab = lerValor('abertura', d), abs = lerValor('abastecimento', d), sa = lerValor('saidas', d), co = lerValor('coleta', d);
     if (!v.comandas && !ab && !abs && !sa && !co) continue;
     resumo.push([dataBR(d), ...[ab, abs, v.formas.pix || 0, v.formas.debito || 0, v.formas.credito || 0, v.formas.dinheiro || 0, v.centavos, sa, co, ab + abs + (v.formas.dinheiro || 0) - sa - co].map(reais), v.comandas]);
   }
+  linhas.push(...linhasSubtotal(todas).map(l => l.map(celulaCsv).join(';')));
   const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
@@ -1131,6 +1148,7 @@ function comandasDoCsv(texto) {
   if (linhas.length < 2 || !/^Data;Comanda;Total da conta/.test(linhas[0])) return null;
   const grupos = new Map();
   for (const l of linhas.slice(1)) {
+    if (/^(Subtotal|Total geral)/.test(l)) continue; // linhas de soma do fim do arquivo
     const [data, comanda, totalTxt, , formaTxt, valorTxt] = camposCsv(l);
     const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(data || ''), total = parseValor(totalTxt || ''), valor = parseValor(valorTxt || '');
     if (!m || total === null || valor === null || !(formaTxt in FORMA_DO_TEXTO)) return null;
@@ -1463,7 +1481,18 @@ if (/[?&]teste\b/.test(location.search)) {
   ok(pg(10000, [12000, null]) === '12000,0|falta 0|troco 2000', 'pagou a mais: o sem valor fica com zero');
   ok(dataBR('2026-10-21') === '21/10/2026', 'data no formato dd/mm/aaaa');
   ok(csvComanda('21/10/2026', '14:30:05', 10000, [{ nome: '=Ana;Bia', pag: 'pix' }, { nome: '', pag: '' }], [5000, 5000], 'Kelly')
-     === '﻿Data;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00;Kelly\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00;Kelly\r\n', 'cópia da comanda em CSV com quem fechou, nome seguro para o Excel');
+     === '\ufeff' + CAB_CSV + '\r\n21/10/2026;14:30:05;100,00;"Ana;Bia";PIX;50,00;Kelly;50,00;;;;\r\n21/10/2026;14:30:05;100,00;Pessoa 2;Sem forma;50,00;Kelly;;;;;\r\nSubtotal de vendas (troco já descontado);;;;;;;50,00;0,00;0,00;0,00;\r\nTotal geral das comandas;;;;;;;;;;;100,00\r\n', 'cópia da comanda em CSV: uma coluna por forma, subtotal e total geral, nome seguro para o Excel');
+  { // troco: o subtotal de vendas já desconta o troco (dinheiro 60 numa conta de 50 = 50 de venda)
+    const t = csvComanda('21/10/2026', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }, { nome: 'Bia', pag: 'credito' }], [3000, 3000]).split('\r\n');
+    ok(t[1].includes(';Dinheiro;30,00;;;;;30,00;') && t[2].includes(';Crédito;30,00;;;;30,00;;')
+       && t[3] === 'Subtotal de vendas (troco já descontado);;;;;;;0,00;0,00;30,00;20,00;' && t[4].endsWith(';50,00'), 'subtotal por forma tira o troco do dinheiro');
+    const ant = '\ufeffData;Comanda;Total da conta (R$);Pessoa;Forma de pagamento;Valor pago (R$);Fechado por\r\n21/10/2026;09:00:00;100,00;Zé;PIX;100,00;Kelly\r\n';
+    const g = copiaGeral(['2026-10-21'], new Map([['2026-10-21', [ant, csvComanda('21/10/2026', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [5000])]]]));
+    ok(g.includes('21/10/2026;09:00:00;100,00;Zé;PIX;100,00;Kelly;100,00;;;;') && g.includes('21/10/2026;10:00:00;50,00;Ana;Dinheiro;50,00;;;;;50,00;')
+       && g.includes('Subtotal de vendas (troco já descontado);;;;;;;100,00;0,00;0,00;50,00;') && g.includes('Total geral das comandas;;;;;;;;;;;150,00')
+       && (g.match(/Subtotal de vendas/g) || []).length === 1, 'cópia geral: colunas por forma (também de comandas antigas) e um só subtotal e total geral');
+    ok(comandasDoCsv(csvComanda('21/10/2026', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [5000])).length === 1, 'o app ainda lê o CSV com as linhas de subtotal');
+  }
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
   gravarValor('abertura', '1999-01-01', 15000); gravarValor('saidas', '1999-01-01', 4000);
