@@ -485,6 +485,81 @@ function copiaGeral(dias, porDia) {
   const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
+// Planilha formatada (.xlsx) da cópia diária e semanal: as mesmas linhas do CSV, com bordas, cores e valores como número (R$).
+// Escrita à mão (zip sem compressão), sem biblioteca, para funcionar também sem internet.
+const CRC_TAB = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t.push(c >>> 0); } return t; })();
+const crc32 = b => { let c = 0xFFFFFFFF; for (const x of b) c = CRC_TAB[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+function zipSemCompressao(arquivos) { // [{ nome, texto }] -> Uint8Array
+  const enc = new TextEncoder(), partes = [], central = []; let pos = 0;
+  const u16 = n => [n & 255, (n >>> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  for (const { nome, texto } of arquivos) {
+    const nb = enc.encode(nome), dados = enc.encode(texto), crc = crc32(dados);
+    const comum = [...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(dados.length), ...u32(dados.length), ...u16(nb.length), ...u16(0)];
+    partes.push(Uint8Array.from([0x50, 0x4b, 3, 4, ...u16(20), ...comum]), nb, dados);
+    central.push(Uint8Array.from([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...comum, ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(pos)]), nb);
+    pos += 30 + nb.length + dados.length;
+  }
+  const tam = central.reduce((a, b) => a + b.length, 0), n = arquivos.length;
+  const fim = Uint8Array.from([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(n), ...u16(n), ...u32(tam), ...u32(pos), ...u16(0)]);
+  const todo = new Uint8Array(pos + tam + fim.length); let o = 0;
+  for (const p of [...partes, ...central, fim]) { todo.set(p, o); o += p.length; }
+  return todo;
+}
+const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// Estilos (cellXfs): 0 padrão, 1 título, 2 cabeçalho, 3 texto, 4 valor R$, 5 subtotal texto, 6 subtotal R$, 7 total texto, 8 total R$, 9 número inteiro
+const ESTILOS_XLSX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot; #,##0.00"/></numFmts>
+<fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><color rgb="FF4A1C17"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF2B0F0C"/><name val="Calibri"/></font></fonts>
+<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF5C1F1A"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF3D9B1"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9A25E"/></patternFill></fill></fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF9C8574"/></left><right style="thin"><color rgb="FF9C8574"/></right><top style="thin"><color rgb="FF9C8574"/></top><bottom style="thin"><color rgb="FF9C8574"/></bottom><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="10">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="3" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="1" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+// Texto CSV da cópia (com BOM e ";") -> arquivo .xlsx (Uint8Array)
+function xlsxDeCsv(csv) {
+  const linhas = csv.replace(/^﻿/, '').split(/\r?\n/).map(camposCsv);
+  const letra = i => String.fromCharCode(65 + i), linhasXml = [], juntas = []; let resumo = false, n = 0;
+  for (const r of linhas) {
+    n++;
+    if (r.length === 1 && r[0] === '') { linhasXml.push(`<row r="${n}"/>`); continue; }
+    const tipo = r[0] === 'Resumo do caixa' ? 'titulo' : r[0] === 'Data' ? 'cab' : /^Subtotal/.test(r[0]) ? 'sub' : /^Total geral/.test(r[0]) ? 'total' : 'dado';
+    if (tipo === 'titulo') resumo = true;
+    const dinheiro = i => resumo ? i >= 1 && i <= 10 : [2, 5, 7, 8, 9, 10, 11].includes(i);
+    const cels = r.map((v, i) => {
+      const ref = letra(i) + n; let est = tipo === 'titulo' ? 1 : tipo === 'cab' ? 2 : 3, num = null;
+      if (tipo === 'sub' || tipo === 'total') { est = (tipo === 'sub' ? 5 : 7) + (i >= 7 && v !== '' ? 1 : 0); if (i >= 7 && v !== '') num = parseValor(v); }
+      else if (tipo === 'dado') {
+        if (dinheiro(i) && v !== '') { num = parseValor(v); est = 4; }
+        else if (resumo && i === 11 && v !== '') { num = Number(v); est = 9; }
+        else if (dinheiro(i)) est = 4;
+      }
+      if (num !== null && !Number.isNaN(num)) return `<c r="${ref}" s="${est}"><v>${[4, 6, 8].includes(est) ? num / 100 : num}</v></c>`;
+      return v === '' ? `<c r="${ref}" s="${est}"/>` : `<c r="${ref}" s="${est}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`;
+    });
+    if (tipo === 'sub' || tipo === 'total') juntas.push(`<mergeCell ref="A${n}:G${n}"/>`);
+    linhasXml.push(`<row r="${n}"${tipo === 'cab' ? ' ht="32" customHeight="1"' : ' ht="20" customHeight="1"'}>${cels.join('')}</row>`);
+  }
+  const larg = [12, 12, 15, 20, 18, 15, 14, 14, 14, 14, 17, 14];
+  const folha = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${larg.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${linhasXml.join('')}</sheetData>${juntas.length ? `<mergeCells count="${juntas.length}">${juntas.join('')}</mergeCells>` : ''}<pageMargins left="0.5" right="0.5" top="0.7" bottom="0.7" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0"/></worksheet>`;
+  const cab = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  return zipSemCompressao([
+    { nome: '[Content_Types].xml', texto: cab + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { nome: '_rels/.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { nome: 'xl/workbook.xml', texto: cab + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Comandas" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+    { nome: 'xl/_rels/workbook.xml.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { nome: 'xl/styles.xml', texto: ESTILOS_XLSX },
+    { nome: 'xl/worksheets/sheet1.xml', texto: folha }]);
+}
 async function lerComandasDaPasta(iso) {
   const textos = [];
   for await (const [nome, h] of arquivosComanda(pastaComandas)) if (nome.startsWith(`Comanda ${iso} `)) textos.push(await (await h.getFile()).text());
@@ -494,8 +569,12 @@ async function lerComandasDaPasta(iso) {
 async function atualizarCopias(iso) {
   const ini = inicioSemana(iso), dias = Array.from({ length: 7 }, (_, i) => somaDiasISO(ini, i)), porDia = new Map();
   for (const d of dias) porDia.set(d, await lerComandasDaPasta(d));
-  await gravarArquivo(await pastaDe(pastaComandas, 'Cópia diária', nomePastaMes(iso)), `Dia ${iso}.csv`, copiaGeral([iso], porDia));
-  await gravarArquivo(await pastaDe(pastaComandas, 'Cópia semanal', nomePastaMes(ini)), `Semana ${ini} a ${dias[6]}.csv`, copiaGeral(dias, porDia));
+  const pDia = await pastaDe(pastaComandas, 'Cópia diária', nomePastaMes(iso)), pSem = await pastaDe(pastaComandas, 'Cópia semanal', nomePastaMes(ini));
+  const csvDia = copiaGeral([iso], porDia), csvSem = copiaGeral(dias, porDia);
+  await gravarArquivo(pDia, `Dia ${iso}.csv`, csvDia);
+  await gravarArquivo(pSem, `Semana ${ini} a ${dias[6]}.csv`, csvSem);
+  // a mesma cópia em planilha formatada (bordas e cores); se falhar, o CSV acima já está salvo
+  try { await gravarArquivo(pDia, `Dia ${iso}.xlsx`, xlsxDeCsv(csvDia)); await gravarArquivo(pSem, `Semana ${ini} a ${dias[6]}.xlsx`, xlsxDeCsv(csvSem)); } catch {}
 }
 
 // Salva a comanda em Comandas\<mês> da pasta escolhida e atualiza as cópias; sem pasta ou permissão, baixa (Downloads). Devolve onde salvou.
@@ -1718,6 +1797,7 @@ if (/[?&]teste\b/.test(location.search)) {
       ok(onde.includes('Comandas\\1999-03 Março') && (await ler('Comandas', '1999-03 Março', 'Comanda 1999-03-03 10-00-00.csv')).includes('Ana'), 'comanda salva em Comandas\\(mês)');
       ok(dia.includes('03/03/1999;10:00:00;50,00;Ana;Dinheiro;60,00') && !dia.includes('01/03/1999;09:00')
          && dia.includes('03/03/1999;100,00;0,00;0,00;0,00;0,00;50,00;50,00;0,00;20,00;130,00;1'), 'cópia diária com as linhas e o resumo do caixa (troco descontado)');
+      ok((await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-03.xlsx')).startsWith('80,75,3,4') && (await ler('Cópia semanal', '1999-03 Março', 'Semana 1999-03-01 a 1999-03-07.xlsx')).startsWith('80,75,3,4'), 'cópia diária e semanal também saem em planilha formatada (.xlsx)');
       ok(sem.includes('01/03/1999;09:00:00') && sem.includes('03/03/1999;10:00:00') && sem.split('Resumo do caixa')[1].trim().split('\r\n').length === 3, 'cópia semanal junta a comanda antiga da raiz e a nova');
       const ondeF = await salvarFechamento('1999-03-03'), pastaF = await raiz.getDirectoryHandle('Fechamento do dia').then(d => d.getDirectoryHandle('1999-03 Março'));
       const arqF = []; for await (const [n, h] of pastaF.entries()) arqF.push([n, await (await h.getFile()).text()]);
