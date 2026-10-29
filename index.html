@@ -554,6 +554,10 @@ function graficoBalanco(titulo, catF, valF, cores) {
   const pontos = cores.map((c, i) => `<c:dPt><c:idx val="${i}"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/>${cheio(c)}</c:dPt>`).join('');
   return envelopeGraf(titulo, `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/>${cheio('5C1F1A')}<c:invertIfNegative val="0"/>${pontos}${rotulos('&quot;R$&quot; #,##0.00', 'outEnd', '4A1C17', 'val')}<c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(valF)}</c:val></c:ser><c:gapWidth val="70"/><c:axId val="6001"/><c:axId val="6002"/></c:barChart>${eixos(6001, 6002, FMT_REAIS)}`, false);
 }
+function graficoEvolucao(titulo, series, catF) { // linhas com pontos: passando o mouse mostra o valor acumulado naquele momento
+  const ss = series.map((s, i) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/><c:tx>${refTxt(s.nomeF)}</c:tx><c:spPr><a:ln w="${s.largo ? 38100 : 25400}" cap="rnd"><a:solidFill><a:srgbClr val="${s.cor}"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="${s.largo ? 8 : 6}"/>${cheio(s.cor)}</c:marker><c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(s.valF)}</c:val><c:smooth val="0"/></c:ser>`).join('');
+  return envelopeGraf(titulo, `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${ss}<c:marker val="1"/><c:axId val="7001"/><c:axId val="7002"/></c:lineChart>${eixos(7001, 7002, FMT_REAIS)}`, true);
+}
 function desenhoGraficos(ancoras) { // [{ c0, r0, c1, r1 }] na ordem dos gráficos
   const caixa = (c, r) => `<xdr:col>${c}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${r}</xdr:row><xdr:rowOff>0</xdr:rowOff>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">`
@@ -564,14 +568,14 @@ function desenhoGraficos(ancoras) { // [{ c0, r0, c1, r1 }] na ordem dos gráfic
 function xlsxDeCsv(csv) {
   const linhas = csv.replace(/^﻿/, '').split(/\r?\n/).map(camposCsv);
   const letra = i => String.fromCharCode(65 + i), linhasXml = [], juntas = []; let resumo = false, n = 0;
-  let priPag = 0, ultPag = 0, cabRes = 0, priRes = 0, ultRes = 0; const dias = [];
+  let priPag = 0, ultPag = 0, cabRes = 0, priRes = 0, ultRes = 0; const dias = [], pagLinhas = [];
   for (const r of linhas) {
     n++;
     if (r.length === 1 && r[0] === '') { linhasXml.push(`<row r="${n}"/>`); continue; }
     const tipo = r[0] === 'Resumo do caixa' ? 'titulo' : r[0] === 'Data' ? 'cab' : /^Subtotal/.test(r[0]) ? 'sub' : /^Total geral/.test(r[0]) ? 'total' : 'dado';
     if (tipo === 'titulo') resumo = true;
     if (tipo === 'cab' && resumo) cabRes = n;
-    if (tipo === 'dado' && !resumo) { priPag = priPag || n; ultPag = n; }
+    if (tipo === 'dado' && !resumo) { priPag = priPag || n; ultPag = n; pagLinhas.push(r); }
     if (tipo === 'dado' && resumo) { priRes = priRes || n; ultRes = n; dias.push(r.map((v, i) => i === 0 ? v : i === 11 ? Number(v) : (parseValor(v) || 0) / 100)); }
     const dinheiro = i => resumo ? i >= 1 && i <= 10 : [2, 5, 7, 8, 9, 10, 11].includes(i);
     const cels = r.map((v, i) => {
@@ -616,13 +620,36 @@ function xlsxDeCsv(csv) {
       if (k < 5) juntas.push(`<mergeCell ref="A${r}:B${r}"/>`);
       juntas.push(`<mergeCell ref="F${r}:G${r}"/>`);
     }
-    const iniG = h + 11; // linha (1-based) onde começam os gráficos
-    linhasXml.push(...rowsX); n = h + 9;
+    const iniG = h + 11; // linha (zero-based) onde começam os gráficos
+    // Evolução comanda a comanda (acumulado por forma e total): alimenta o gráfico de linhas
+    const grupos = new Map();
+    for (const r of pagLinhas) {
+      const k = r[0] + '|' + r[1]; if (!grupos.has(k)) grupos.set(k, { data: r[0], hora: r[1], total: parseValor(r[2]) || 0, formas: [], valores: [] });
+      const g = grupos.get(k); g.formas.push(FORMA_DO_TEXTO[r[4]] ?? ''); g.valores.push(parseValor(r[5]) || 0);
+    }
+    const chaveHora = g => g.data.split('/').reverse().join('') + g.hora;
+    const acum = { pix: 0, debito: 0, credito: 0, dinheiro: 0 }; let sem = 0;
+    const evo = [...grupos.values()].sort((a, b) => chaveHora(a) < chaveHora(b) ? -1 : 1).map(g => {
+      const pago = g.valores.reduce((a, b) => a + b, 0), liq = liquidoPorForma(g.formas, g.valores, Math.max(pago - g.total, 0)); let venda = liq[''] || 0;
+      sem += liq[''] || 0; for (const k of Object.keys(acum)) { acum[k] += liq[k] || 0; venda += liq[k] || 0; }
+      return { momento: g.data.slice(0, 5) + ' ' + g.hora.slice(0, 5), ...acum, total: acum.pix + acum.debito + acum.credito + acum.dinheiro + sem, venda };
+    });
+    const t0 = iniG + 64; // 1-based: título da tabela da evolução
+    if (evo.length) {
+      linha(t0, [T('A' + t0, 1, 'Evolução das vendas, comanda a comanda (valores acumulados)')], 28);
+      linha(t0 + 1, ['Momento', 'PIX', 'Débito', 'Crédito', 'Dinheiro', 'Total acumulado', 'Venda da comanda (R$)'].map((t, i) => T(letra(i) + (t0 + 1), 2, t)), 32);
+      evo.forEach((e, k) => { const r = t0 + 2 + k; linha(r, [T('A' + r, 3, e.momento), ...['pix', 'debito', 'credito', 'dinheiro', 'total', 'venda'].map((c, i) => V(letra(i + 1) + r, 4, e[c] / 100, ''))]); });
+    }
+    linhasXml.push(...rowsX); n = t0 + 2 + evo.length;
     graficos = [
       graficoRosca('Vendas por forma de pagamento', `Comandas!$A$${h + 1}:$A$${h + 4}`, `Comandas!$C$${h + 1}:$C$${h + 4}`),
       graficoDias('Vendas por dia e forma de pagamento', colRes.map((c, i) => ({ nomeF: `Comandas!$${c}$${cabRes}`, valF: `Comandas!$${c}$${priRes}:$${c}$${ultRes}`, cor: COR_FORMA[i] })), `Comandas!$A$${priRes}:$A$${ultRes}`),
+      ...(evo.length ? [graficoEvolucao('Evolução das vendas (passe o mouse nos pontos)', [...colRes.map((c, i) => ({ nomeF: `Comandas!$${letra(i + 1)}$${t0 + 1}`, valF: `Comandas!$${letra(i + 1)}$${t0 + 2}:$${letra(i + 1)}$${t0 + 1 + evo.length}`, cor: COR_FORMA[i] })),
+        { nomeF: `Comandas!$F$${t0 + 1}`, valF: `Comandas!$F$${t0 + 2}:$F$${t0 + 1 + evo.length}`, cor: '4A1C17', largo: true }], `Comandas!$A$${t0 + 2}:$A$${t0 + 1 + evo.length}`)] : []),
       graficoBalanco('Balanço do caixa', `Comandas!$F$${h + 1}:$F$${h + 6}`, `Comandas!$H$${h + 1}:$H$${h + 6}`, ['8C7B6B', '3A6EA5', '2A9D8F', 'C0392B', '8E5BA6', 'E9A25E'])];
-    ancoras = [{ c0: 0, r0: iniG, c1: 5, r1: iniG + 19 }, { c0: 5, r0: iniG, c1: 12, r1: iniG + 19 }, { c0: 0, r0: iniG + 20, c1: 12, r1: iniG + 42 }];
+    ancoras = [{ c0: 0, r0: iniG, c1: 5, r1: iniG + 19 }, { c0: 5, r0: iniG, c1: 12, r1: iniG + 19 }];
+    if (evo.length) ancoras.push({ c0: 0, r0: iniG + 20, c1: 12, r1: iniG + 40 });
+    ancoras.push({ c0: 0, r0: iniG + (evo.length ? 41 : 20), c1: 12, r1: iniG + (evo.length ? 61 : 40) });
   }
 
   const larg = [12, 12, 15, 20, 18, 15, 14, 14, 14, 14, 17, 14];
@@ -1655,6 +1682,7 @@ if (/[?&]teste\b/.test(location.search)) {
        && g.includes('Subtotal de vendas (troco já descontado);;;;;;;100,00;0,00;0,00;50,00;') && g.includes('Total geral das comandas;;;;;;;;;;;150,00')
        && (g.match(/Subtotal de vendas/g) || []).length === 1, 'cópia geral: colunas por forma (também de comandas antigas) e um só subtotal e total geral');
     ok(comandasDoCsv(csvComanda('21/10/2026', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [5000])).length === 1, 'o app ainda lê o CSV com as linhas de subtotal');
+    { const x = new TextDecoder().decode(xlsxDeCsv(g)); ok(x.includes('xl/charts/chart4.xml') && x.includes('Evolução das vendas, comanda a comanda') && x.includes('<c:lineChart>') && x.includes('21/10 09:00') && x.includes('21/10 10:00'), 'planilha .xlsx traz o painel com 4 gráficos, inclusive a evolução comanda a comanda (linhas)'); }
   }
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
