@@ -409,7 +409,7 @@ const nomeSeguro = (p, i) => limpaNome(p.nome) || `Pessoa ${i + 1}`;
 // Isso evita fechar por engano; não é segurança forte (a página é aberta e 4 dígitos se descobrem testando).
 // Pessoa nova: gere o hash com hashSenha('NNNN') no console do navegador e acrescente aqui.
 const hashSenha = pin => { let h = 0x811c9dc5; for (const c of 'bookafe:' + pin) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); };
-const OPERADORES = { '885345d8': 'Pilar', 'f68d66b0': 'Kelly', 'c1ec2f0': 'Kleber', '3bbd3bac': 'Andrea', '7378556c': 'Solange' };
+const OPERADORES = { '885345d8': 'Pilar', 'f68d66b0': 'Kely', 'c1ec2f0': 'Kleber', '3bbd3bac': 'Andrea', '7378556c': 'Solange' };
 const operadorDa = pin => /^\d{4}$/.test(pin) ? OPERADORES[hashSenha(pin)] || null : null;
 function linhasPlanilha(data, comanda, totalCentavos, lista, partes) {
   return lista.map((p, i) => [data, comanda, reais(totalCentavos), nomeSeguro(p, i), PAGAMENTOS[p.pag] || 'Sem forma', reais(partes[i])].join('\t')).join('\n');
@@ -1531,7 +1531,7 @@ if (/[?&]teste\b/.test(location.search)) {
   const lf = linhaFormaPct('credito', 'Crédito', 2500, 10000, 'dica');
   ok(lf.querySelector('.pc').textContent === '25,0%' && lf.querySelector('i').style.width === '25%' && lf.querySelector('i').className === 'f-credito' && lf.dataset.dica === 'dica', 'linha da forma com barra colorida e %');
   // Senhas: o teste não guarda nenhuma senha de verdade, só confere as regras
-  ok(Object.values(OPERADORES).join() === 'Pilar,Kelly,Kleber,Andrea,Solange' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'cinco pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
+  ok(Object.values(OPERADORES).join() === 'Pilar,Kely,Kleber,Andrea,Solange' && hashSenha('0000') === hashSenha('0000') && hashSenha('0000') !== hashSenha('0001'), 'cinco pessoas cadastradas; resumo da senha é sempre o mesmo para a mesma senha');
   ok(operadorDa('') === null && operadorDa('123') === null && operadorDa('12345') === null && operadorDa('abcd') === null
      && Array.from({ length: 10000 }, (_, n) => String(n).padStart(4, '0')).filter(operadorDa).length === Object.keys(OPERADORES).length, 'só as senhas cadastradas abrem; o resto é recusado');
   // Zerar só com a senha de quem libera (teste com senhas de mentira, apagadas logo depois)
