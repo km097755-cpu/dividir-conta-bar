@@ -485,7 +485,8 @@ function copiaGeral(dias, porDia) {
   const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
   return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
 }
-// Planilha formatada (.xlsx) da cópia diária e semanal: as mesmas linhas do CSV, com bordas, cores e valores como número (R$).
+// Planilha formatada (.xlsx) da cópia diária e semanal: as mesmas linhas do CSV, com bordas, cores e valores como número (R$),
+// e, abaixo, o painel de apresentação (vendas por forma, balanço geral, comandas e 3 gráficos que se calculam sozinhos pelas células).
 // Escrita à mão (zip sem compressão), sem biblioteca, para funcionar também sem internet.
 const CRC_TAB = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t.push(c >>> 0); } return t; })();
 const crc32 = b => { let c = 0xFFFFFFFF; for (const x of b) c = CRC_TAB[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
@@ -506,14 +507,14 @@ function zipSemCompressao(arquivos) { // [{ nome, texto }] -> Uint8Array
   return todo;
 }
 const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// Estilos (cellXfs): 0 padrão, 1 título, 2 cabeçalho, 3 texto, 4 valor R$, 5 subtotal texto, 6 subtotal R$, 7 total texto, 8 total R$, 9 número inteiro
+// Estilos (cellXfs): 0 padrão, 1 título, 2 cabeçalho, 3 texto, 4 valor R$, 5 subtotal texto, 6 subtotal R$, 7 total texto, 8 total R$, 9 número inteiro, 10 porcentagem, 11 porcentagem do total
 const ESTILOS_XLSX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot; #,##0.00"/></numFmts>
+<numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;R$&quot; #,##0.00"/><numFmt numFmtId="165" formatCode="0.0%"/></numFmts>
 <fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><color rgb="FF4A1C17"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF2B0F0C"/><name val="Calibri"/></font></fonts>
 <fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF5C1F1A"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF3D9B1"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9A25E"/></patternFill></fill></fills>
 <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF9C8574"/></left><right style="thin"><color rgb="FF9C8574"/></right><top style="thin"><color rgb="FF9C8574"/></top><bottom style="thin"><color rgb="FF9C8574"/></bottom><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="10">
+<cellXfs count="12">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
@@ -524,16 +525,54 @@ const ESTILOS_XLSX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><st
 <xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 <xf numFmtId="164" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
 <xf numFmtId="1" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="165" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
 </cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+// ---- gráficos (XML do Excel) ----
+const NS_GRAF = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+const COR_FORMA = ['2A9D8F', '3A6EA5', '8E5BA6', 'E9A25E']; // PIX, Débito, Crédito, Dinheiro (as mesmas cores nos gráficos)
+const fonteGraf = (sz, cor = '4A1C17', b = 1) => `<a:defRPr sz="${sz}" b="${b}"><a:solidFill><a:srgbClr val="${cor}"/></a:solidFill><a:latin typeface="Calibri"/></a:defRPr>`;
+const tituloGraf = t => `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${fonteGraf(1400)}</a:pPr><a:r><a:rPr lang="pt-BR" sz="1400" b="1"><a:solidFill><a:srgbClr val="4A1C17"/></a:solidFill><a:latin typeface="Calibri"/></a:rPr><a:t>${xmlEsc(t)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>`;
+const txPr = (sz, cor, b = 0) => `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>${fonteGraf(sz, cor, b)}</a:pPr><a:endParaRPr lang="pt-BR"/></a:p></c:txPr>`;
+const cheio = c => `<c:spPr><a:solidFill><a:srgbClr val="${c}"/></a:solidFill></c:spPr>`;
+const rotulos = (fmt, pos, cor, mostra) => `<c:dLbls><c:numFmt formatCode="${fmt}" sourceLinked="0"/><c:spPr><a:noFill/></c:spPr>${txPr(1000, cor, 1)}${pos ? `<c:dLblPos val="${pos}"/>` : ''}<c:showLegendKey val="0"/><c:showVal val="${mostra === 'val' ? 1 : 0}"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="${mostra === 'pct' ? 1 : 0}"/><c:showBubbleSize val="0"/></c:dLbls>`;
+const eixos = (idC, idV, fmt) => `<c:catAx><c:axId val="${idC}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${txPr(1000, '4A1C17')}<c:crossAx val="${idV}"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>`
+  + `<c:valAx><c:axId val="${idV}"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="E4D8CC"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="${fmt}" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${txPr(1000, '4A1C17')}<c:crossAx val="${idC}"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>`;
+const envelopeGraf = (titulo, area, legenda) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace ${NS_GRAF}><c:roundedCorners val="0"/><c:chart>${tituloGraf(titulo)}<c:plotArea><c:layout/>${area}</c:plotArea>${legenda ? `<c:legend><c:legendPos val="b"/><c:overlay val="0"/>${txPr(1000, '4A1C17')}</c:legend>` : ''}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="9C8574"/></a:solidFill></a:ln></c:spPr></c:chartSpace>`;
+const refTxt = f => `<c:strRef><c:f>${f}</c:f></c:strRef>`, refNum = f => `<c:numRef><c:f>${f}</c:f></c:numRef>`;
+const FMT_REAIS = '&quot;R$&quot; #,##0';
+function graficoRosca(titulo, catF, valF) {
+  const pontos = COR_FORMA.map((c, i) => `<c:dPt><c:idx val="${i}"/><c:bubble3D val="0"/>${cheio(c)}</c:dPt>`).join('');
+  return envelopeGraf(titulo, `<c:doughnutChart><c:varyColors val="1"/><c:ser><c:idx val="0"/><c:order val="0"/>${pontos}${rotulos('0.0%', '', 'FFFFFF', 'pct')}<c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(valF)}</c:val></c:ser><c:firstSliceAng val="0"/><c:holeSize val="52"/></c:doughnutChart>`, true);
+}
+function graficoDias(titulo, series, catF) { // series: [{ nomeF, valF, cor }] — colunas empilhadas por dia
+  const ss = series.map((s, i) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/><c:tx>${refTxt(s.nomeF)}</c:tx>${cheio(s.cor)}<c:invertIfNegative val="0"/><c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(s.valF)}</c:val></c:ser>`).join('');
+  return envelopeGraf(titulo, `<c:barChart><c:barDir val="col"/><c:grouping val="stacked"/><c:varyColors val="0"/>${ss}<c:gapWidth val="55"/><c:overlap val="100"/><c:axId val="5001"/><c:axId val="5002"/></c:barChart>${eixos(5001, 5002, FMT_REAIS)}`, true);
+}
+function graficoBalanco(titulo, catF, valF, cores) {
+  const pontos = cores.map((c, i) => `<c:dPt><c:idx val="${i}"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/>${cheio(c)}</c:dPt>`).join('');
+  return envelopeGraf(titulo, `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/>${cheio('5C1F1A')}<c:invertIfNegative val="0"/>${pontos}${rotulos('&quot;R$&quot; #,##0.00', 'outEnd', '4A1C17', 'val')}<c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(valF)}</c:val></c:ser><c:gapWidth val="70"/><c:axId val="6001"/><c:axId val="6002"/></c:barChart>${eixos(6001, 6002, FMT_REAIS)}`, false);
+}
+function desenhoGraficos(ancoras) { // [{ c0, r0, c1, r1 }] na ordem dos gráficos
+  const caixa = (c, r) => `<xdr:col>${c}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${r}</xdr:row><xdr:rowOff>0</xdr:rowOff>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">`
+    + ancoras.map((a, i) => `<xdr:twoCellAnchor><xdr:from>${caixa(a.c0, a.r0)}</xdr:from><xdr:to>${caixa(a.c1, a.r1)}</xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${i + 2}" name="Gráfico ${i + 1}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId${i + 1}"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>`).join('') + '</xdr:wsDr>';
+}
+
 // Texto CSV da cópia (com BOM e ";") -> arquivo .xlsx (Uint8Array)
 function xlsxDeCsv(csv) {
   const linhas = csv.replace(/^﻿/, '').split(/\r?\n/).map(camposCsv);
   const letra = i => String.fromCharCode(65 + i), linhasXml = [], juntas = []; let resumo = false, n = 0;
+  let priPag = 0, ultPag = 0, cabRes = 0, priRes = 0, ultRes = 0; const dias = [];
   for (const r of linhas) {
     n++;
     if (r.length === 1 && r[0] === '') { linhasXml.push(`<row r="${n}"/>`); continue; }
     const tipo = r[0] === 'Resumo do caixa' ? 'titulo' : r[0] === 'Data' ? 'cab' : /^Subtotal/.test(r[0]) ? 'sub' : /^Total geral/.test(r[0]) ? 'total' : 'dado';
     if (tipo === 'titulo') resumo = true;
+    if (tipo === 'cab' && resumo) cabRes = n;
+    if (tipo === 'dado' && !resumo) { priPag = priPag || n; ultPag = n; }
+    if (tipo === 'dado' && resumo) { priRes = priRes || n; ultRes = n; dias.push(r.map((v, i) => i === 0 ? v : i === 11 ? Number(v) : (parseValor(v) || 0) / 100)); }
     const dinheiro = i => resumo ? i >= 1 && i <= 10 : [2, 5, 7, 8, 9, 10, 11].includes(i);
     const cels = r.map((v, i) => {
       const ref = letra(i) + n; let est = tipo === 'titulo' ? 1 : tipo === 'cab' ? 2 : 3, num = null;
@@ -549,16 +588,61 @@ function xlsxDeCsv(csv) {
     if (tipo === 'sub' || tipo === 'total') juntas.push(`<mergeCell ref="A${n}:G${n}"/>`);
     linhasXml.push(`<row r="${n}"${tipo === 'cab' ? ' ht="32" customHeight="1"' : ' ht="20" customHeight="1"'}>${cels.join('')}</row>`);
   }
+
+  // ---- painel de apresentação (abaixo das tabelas) ----
+  let graficos = [], ancoras = [];
+  if (dias.length) {
+    const soma = i => dias.reduce((a, d) => a + d[i], 0), formas = [3, 4, 5, 6].map(soma), vendas = formas.reduce((a, b) => a + b, 0);
+    const qtd = soma(11);
+    let maior = 0; for (let k = priPag - 1; k < ultPag; k++) maior = Math.max(maior, (parseValor(linhas[k][2] || '') || 0) / 100);
+    const aberturaIni = dias[0][1], conf = dias[dias.length - 1][10];
+    const d0 = n + 2, rowsX = [];
+    const T = (ref, est, v) => `<c r="${ref}" s="${est}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`, V = (ref, est, v, f) => `<c r="${ref}" s="${est}">${f ? `<f>${f}</f>` : ''}<v>${v}</v></c>`, E = (ref, est) => `<c r="${ref}" s="${est}"/>`;
+    const linha = (r, cels, ht = 20) => rowsX.push(`<row r="${r}" ht="${ht}" customHeight="1">${cels.join('')}</row>`);
+    linha(d0, [T('A' + d0, 1, 'Painel de vendas e balanço')], 28);
+    const h = d0 + 2, tipos = ['PIX', 'Débito', 'Crédito', 'Dinheiro'], colRes = ['D', 'E', 'F', 'G'];
+    linha(h, [T('A' + h, 2, 'Forma de pagamento'), E('B' + h, 2), T('C' + h, 2, 'Vendas (R$)'), T('D' + h, 2, '% do total'), T('F' + h, 2, 'Balanço geral'), E('G' + h, 2), T('H' + h, 2, 'Valor (R$)')], 24);
+    juntas.push(`<mergeCell ref="A${h}:B${h}"/>`, `<mergeCell ref="F${h}:G${h}"/>`);
+    const rt = h + 5, balanco = [
+      ['Abertura de caixa (início)', 'B' + priRes, aberturaIni, 4], ['Suprimento/Retirada (saldo)', `SUM(C${priRes}:C${ultRes})`, soma(2), 4], ['Vendas (total)', `SUM(H${priRes}:H${ultRes})`, vendas, 4],
+      ['Saídas', `SUM(I${priRes}:I${ultRes})`, soma(8), 4], ['Coleta/Cofre', `SUM(J${priRes}:J${ultRes})`, soma(9), 4], ['Conferência/Caixa (final)', 'K' + ultRes, conf, 4],
+      ['Comandas (quantidade)', `SUM(L${priRes}:L${ultRes})`, qtd, 9], ['Ticket médio por comanda', `IFERROR(H${h + 3}/H${h + 7},0)`, qtd ? vendas / qtd : 0, 4], ['Maior comanda (total da conta)', `MAX(C${priPag}:C${ultPag})`, maior, 4]];
+    for (let k = 0; k < 9; k++) {
+      const r = h + 1 + k, esq = [];
+      if (k < 4) esq.push(T('A' + r, 3, tipos[k]), E('B' + r, 3), V('C' + r, 4, formas[k], `SUM(${colRes[k]}${priRes}:${colRes[k]}${ultRes})`), V('D' + r, 10, vendas ? formas[k] / vendas : 0, `IFERROR(C${r}/C$${rt},0)`));
+      else if (k === 4) esq.push(T('A' + r, 7, 'Total de vendas'), E('B' + r, 7), V('C' + r, 8, vendas, `SUM(C${h + 1}:C${h + 4})`), V('D' + r, 11, vendas ? 1 : 0, `IFERROR(C${r}/C$${rt},0)`));
+      const b = balanco[k];
+      linha(r, [...esq, T('F' + r, 5, b[0]), E('G' + r, 5), V('H' + r, b[3] === 9 ? 9 : 6, b[2], b[1])]);
+      if (k < 5) juntas.push(`<mergeCell ref="A${r}:B${r}"/>`);
+      juntas.push(`<mergeCell ref="F${r}:G${r}"/>`);
+    }
+    const iniG = h + 11; // linha (1-based) onde começam os gráficos
+    linhasXml.push(...rowsX); n = h + 9;
+    graficos = [
+      graficoRosca('Vendas por forma de pagamento', `Comandas!$A$${h + 1}:$A$${h + 4}`, `Comandas!$C$${h + 1}:$C$${h + 4}`),
+      graficoDias('Vendas por dia e forma de pagamento', colRes.map((c, i) => ({ nomeF: `Comandas!$${c}$${cabRes}`, valF: `Comandas!$${c}$${priRes}:$${c}$${ultRes}`, cor: COR_FORMA[i] })), `Comandas!$A$${priRes}:$A$${ultRes}`),
+      graficoBalanco('Balanço do caixa', `Comandas!$F$${h + 1}:$F$${h + 6}`, `Comandas!$H$${h + 1}:$H$${h + 6}`, ['8C7B6B', '3A6EA5', '2A9D8F', 'C0392B', '8E5BA6', 'E9A25E'])];
+    ancoras = [{ c0: 0, r0: iniG, c1: 5, r1: iniG + 19 }, { c0: 5, r0: iniG, c1: 12, r1: iniG + 19 }, { c0: 0, r0: iniG + 20, c1: 12, r1: iniG + 42 }];
+  }
+
   const larg = [12, 12, 15, 20, 18, 15, 14, 14, 14, 14, 17, 14];
-  const folha = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${larg.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${linhasXml.join('')}</sheetData>${juntas.length ? `<mergeCells count="${juntas.length}">${juntas.join('')}</mergeCells>` : ''}<pageMargins left="0.5" right="0.5" top="0.7" bottom="0.7" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0"/></worksheet>`;
-  const cab = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  return zipSemCompressao([
-    { nome: '[Content_Types].xml', texto: cab + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
-    { nome: '_rels/.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
-    { nome: 'xl/workbook.xml', texto: cab + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Comandas" sheetId="1" r:id="rId1"/></sheets></workbook>' },
-    { nome: 'xl/_rels/workbook.xml.rels', texto: cab + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+  const folha = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${larg.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${linhasXml.join('')}</sheetData>${juntas.length ? `<mergeCells count="${juntas.length}">${juntas.join('')}</mergeCells>` : ''}<pageMargins left="0.5" right="0.5" top="0.7" bottom="0.7" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0"/>${graficos.length ? '<drawing r:id="rId1"/>' : ''}</worksheet>`;
+  const cab = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships', PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const pecas = [
+    { nome: '[Content_Types].xml', texto: cab + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + (graficos.length ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' + graficos.map((_, i) => `<Override PartName="/xl/charts/chart${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join('') : '') + '</Types>' },
+    { nome: '_rels/.rels', texto: cab + `<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { nome: 'xl/workbook.xml', texto: cab + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}"><sheets><sheet name="Comandas" sheetId="1" r:id="rId1"/></sheets><calcPr fullCalcOnLoad="1"/></workbook>` },
+    { nome: 'xl/_rels/workbook.xml.rels', texto: cab + `<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${REL}/styles" Target="styles.xml"/></Relationships>` },
     { nome: 'xl/styles.xml', texto: ESTILOS_XLSX },
-    { nome: 'xl/worksheets/sheet1.xml', texto: folha }]);
+    { nome: 'xl/worksheets/sheet1.xml', texto: folha }];
+  if (graficos.length) {
+    pecas.push({ nome: 'xl/worksheets/_rels/sheet1.xml.rels', texto: cab + `<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${REL}/drawing" Target="../drawings/drawing1.xml"/></Relationships>` },
+      { nome: 'xl/drawings/drawing1.xml', texto: desenhoGraficos(ancoras) },
+      { nome: 'xl/drawings/_rels/drawing1.xml.rels', texto: cab + `<Relationships xmlns="${PKG}">${graficos.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/chart" Target="../charts/chart${i + 1}.xml"/>`).join('')}</Relationships>` },
+      ...graficos.map((g, i) => ({ nome: `xl/charts/chart${i + 1}.xml`, texto: g })));
+  }
+  return zipSemCompressao(pecas);
 }
 async function lerComandasDaPasta(iso) {
   const textos = [];
