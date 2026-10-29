@@ -1030,7 +1030,7 @@ function renderTotais() {
     const partes = c.notas != null ? ` (notas ${fmt(c.notas)}, moedas ${fmt(c.moedas)})` : '';
     const d = c.contado - c.esperado, el = linha(`${c.hora.slice(0, 5)} · ${c.por} · contado ${fmt(c.contado)}${partes} · ${difTxt(d)}`, 0, d < 0 ? 'falta' : 'sobra');
     el.lastChild.textContent = d > 0 ? `+ ${fmt(d)}` : `− ${fmt(-d)}`;
-    // Diferença vira lançamento no caixa (sobrou = suprimento, faltou = retirada), uma vez só, com senha da Pilar ou da Solange
+    // Diferença vira lançamento no caixa (sobrou = suprimento, faltou = retirada), uma vez só, com senha da Pilar, da Solange, do Kleber ou da Kely
     el.firstChild.append(botaoSupervisor('Lançar diferença no caixa', op => {
       lancarDiferenca(iso, i, op); mostraValoresDia(); calcular();
       avisar(`Diferença de ${d > 0 ? '+ ' : '− '}${fmt(Math.abs(d))} lançada no caixa por ${op} (${d > 0 ? 'suprimento' : 'retirada'}).`, 8000);
@@ -1050,8 +1050,8 @@ function renderTotais() {
 }
 
 // Zerar (e voltar a contar) só com a senha de quem pode liberar; quem = null aceita qualquer colaborador com senha
-const LIBERAM = ['Pilar', 'Solange', 'Kleber'];
-const nomesLiberam = () => LIBERAM.join(', ').replace(/, ([^,]*)$/, ' ou $1'); // "Pilar, Solange ou Kleber"
+const LIBERAM = ['Pilar', 'Solange', 'Kleber', 'Kely'];
+const nomesLiberam = () => LIBERAM.join(', ').replace(/, ([^,]*)$/, ' ou $1'); // "Pilar, Solange, Kleber ou Kely"
 function botaoSupervisor(texto, acao, quem = LIBERAM) {
   const caixa = Object.assign(document.createElement('p'), { className: 'liberar' });
   const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost zerar', textContent: texto });
@@ -1119,7 +1119,7 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
     + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`
     + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
 }), { className: 'btn' }));
-// Zerar abertura de caixa (senha da Pilar ou da Solange): zera todo o caixa do dia, também o que está gravado no navegador —
+// Zerar abertura de caixa (senha da Pilar, da Solange, do Kleber ou da Kely): zera todo o caixa do dia, também o que está gravado no navegador —
 // abertura (fica 0, não volta a vir do dia anterior), suprimentos/retiradas, saídas, coleta e contagens. As vendas continuam.
 function zerarAbertura(iso) {
   for (const t of ['abertura', 'abastecimento', 'saidas', 'coleta', 'abauto']) gravarValor(t, iso, 0);
@@ -1305,8 +1305,8 @@ renderLista(); calcular(); mostraQuemFecha();
 // Abrir o caixa: o app abre travado e só libera com a senha de um colaborador; quem abre já fica como quem fecha as contas.
 // Fica só na memória da página: fechar ou recarregar o app pede a senha de novo.
 function travar() { $('trava').hidden = false; document.querySelector('.wrap').inert = true; $('trava-senha').value = ''; $('trava-err').textContent = ''; $('trava-senha').focus(); }
-// Instalar o aplicativo: só quem abre o caixa com a senha da Pilar (pedido do Kleber)
-const INSTALAM = ['Pilar'];
+// Instalar o aplicativo: só quem abre o caixa com a senha da Pilar ou da Kely (pedido do Kleber)
+const INSTALAM = ['Pilar', 'Kely'];
 function destravar(op) { $('trava').hidden = true; document.querySelector('.wrap').inert = false; quemFecha = op; mostraQuemFecha(); if (INSTALAM.includes(op)) ligarInstalacao(); }
 function tentarAbrir() {
   const op = operadorDa($('trava-senha').value);
@@ -1731,7 +1731,7 @@ if (/[?&]teste\b/.test(location.search)) {
   const tenta = pin => { bz.querySelector('input').value = pin; bz.querySelector('.btn').click(); };
   tenta('9999'); const m1 = bz.querySelector('small').textContent; tenta('0001'); const m2 = bz.querySelector('small').textContent; tenta('0000');
   delete OPERADORES[hashSenha('0000')]; delete OPERADORES[hashSenha('0001')];
-  ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input') && m2.includes('Pilar, Solange ou Kleber'), 'zerar só libera com a senha da Pilar, da Solange ou do Kleber');
+  ok(m1 === 'Senha errada.' && m2.startsWith('Kelly não pode liberar') && feitos.join() === 'Pilar' && !bz.querySelector('input') && m2.includes('Pilar, Solange, Kleber ou Kely'), 'zerar só libera com a senha da Pilar, da Solange ou do Kleber');
   const qf = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1, dinheiro: 2 } }, { hora: '11:00:00', formas: { pix: 3 } }]]]);
   const qz = contarPorForma([['1999-07-07', [{ hora: '09:00:00', formas: { pix: 1 } }, { hora: '11:00:00', formas: { pix: 3 } }]]], marcoDesde({ quando: '07/07/1999 10:00' }));
   ok(qf.pix === 2 && qf.dinheiro === 1 && !qf.debito && qz.pix === 1, 'quantidade de comandas por forma, e só depois de zerar');
