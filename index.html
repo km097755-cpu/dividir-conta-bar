@@ -555,7 +555,7 @@ function graficoBalanco(titulo, catF, valF, cores) {
   return envelopeGraf(titulo, `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/>${cheio('5C1F1A')}<c:invertIfNegative val="0"/>${pontos}${rotulos('&quot;R$&quot; #,##0.00', 'outEnd', '4A1C17', 'val')}<c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(valF)}</c:val></c:ser><c:gapWidth val="70"/><c:axId val="6001"/><c:axId val="6002"/></c:barChart>${eixos(6001, 6002, FMT_REAIS)}`, false);
 }
 function graficoEvolucao(titulo, series, catF) { // linhas com pontos: passando o mouse mostra o valor acumulado naquele momento
-  const ss = series.map((s, i) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/><c:tx>${refTxt(s.nomeF)}</c:tx><c:spPr><a:ln w="${s.largo ? 38100 : 25400}" cap="rnd"><a:solidFill><a:srgbClr val="${s.cor}"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="${s.largo ? 8 : 6}"/>${cheio(s.cor)}</c:marker><c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(s.valF)}</c:val><c:smooth val="0"/></c:ser>`).join('');
+  const ss = series.map((s, i) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/><c:tx>${refTxt(s.nomeF)}</c:tx><c:spPr><a:ln w="${s.largo ? 38100 : 25400}" cap="rnd"><a:solidFill><a:srgbClr val="${s.cor}"/></a:solidFill><a:round/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="${s.largo ? 8 : 6}"/><c:spPr><a:solidFill><a:srgbClr val="${s.cor}"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln></c:spPr></c:marker><c:cat>${refTxt(catF)}</c:cat><c:val>${refNum(s.valF)}</c:val><c:smooth val="0"/></c:ser>`).join('');
   return envelopeGraf(titulo, `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${ss}<c:marker val="1"/><c:axId val="7001"/><c:axId val="7002"/></c:lineChart>${eixos(7001, 7002, FMT_REAIS)}`, true);
 }
 function desenhoGraficos(ancoras) { // [{ c0, r0, c1, r1 }] na ordem dos gráficos
@@ -733,6 +733,7 @@ async function salvarFechamento(iso) {
       const opt = { mode: 'readwrite' };
       if (await pastaComandas.queryPermission(opt) !== 'granted' && await pastaComandas.requestPermission(opt) !== 'granted') throw new Error('sem permissão');
       await gravarArquivo(await pastaDe(pastaComandas, 'Fechamento do dia', nomePastaMes(iso)), nome, await fechamentoDoDia(iso, true));
+      try { await atualizarCopias(iso); } catch {} // a cópia diária/semanal (e o painel do .xlsx) passam a mostrar o caixa final: saídas, coleta e suprimentos lançados depois da última comanda
       return `na pasta ${pastaComandas.name}\\Fechamento do dia\\${nomePastaMes(iso)}`;
     } catch {}
   }
@@ -1911,11 +1912,13 @@ if (/[?&]teste\b/.test(location.search)) {
          && dia.includes('03/03/1999;100,00;0,00;0,00;0,00;0,00;50,00;50,00;0,00;20,00;130,00;1'), 'cópia diária com as linhas e o resumo do caixa (troco descontado)');
       ok((await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-03.xlsx')).startsWith('80,75,3,4') && (await ler('Cópia semanal', '1999-03 Março', 'Semana 1999-03-01 a 1999-03-07.xlsx')).startsWith('80,75,3,4'), 'cópia diária e semanal também saem em planilha formatada (.xlsx)');
       ok(sem.includes('01/03/1999;09:00:00') && sem.includes('03/03/1999;10:00:00') && sem.split('Resumo do caixa')[1].trim().split('\r\n').length === 3, 'cópia semanal junta a comanda antiga da raiz e a nova');
+      gravarValor('saidas', '1999-03-03', 700); // lançada depois da última comanda: o Finalizar o dia tem de levar para a cópia diária
       const ondeF = await salvarFechamento('1999-03-03'), pastaF = await raiz.getDirectoryHandle('Fechamento do dia').then(d => d.getDirectoryHandle('1999-03 Março'));
       const arqF = []; for await (const [n, h] of pastaF.entries()) arqF.push([n, await (await h.getFile()).text()]);
       ok(ondeF.includes('Fechamento do dia\\1999-03 Março') && arqF.length === 1 && /^Fechamento 1999-03-03 \d\d-\d\d-\d\d\.csv$/.test(arqF[0][0])
          && arqF[0][1].includes('Abertura de caixa;100,00') && arqF[0][1].includes('Coleta/Cofre;20,00') && arqF[0][1].includes('Pagamentos de cada comanda') && arqF[0][1].includes(';Ana;Dinheiro;60,00'),
          'finalizar o dia grava o fechamento completo em Fechamento do dia\\(mês)');
+      ok((await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-03.csv')).includes(';50,00;7,00;20,00;'), 'finalizar o dia refaz a cópia diária com o caixa final (saídas lançadas depois da última comanda)');
       await gravarArquivo(await pastaDe(raiz, 'Cópia diária', '1999-03 Março'), 'Dia 1999-03-01.csv', 'velho');
       ok(await refazerCopiasMes('1999-03') === 2 && (await ler('Cópia diária', '1999-03 Março', 'Dia 1999-03-01.csv')).includes('01/03/1999;09:00:00'), 'refazer cópias do mês (dias antigos)');
       const nomes = []; for await (const [n] of arquivosComanda(raiz)) nomes.push(n);
