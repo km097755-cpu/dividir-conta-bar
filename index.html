@@ -232,6 +232,10 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
       <section class="panel oliva" aria-labelledby="h-res-dia"><h2 id="h-res-dia">Resultado do dia</h2><div class="cards" id="cards-dia"></div><ul class="barras" id="formas-dia"></ul><div class="acoes" id="acoes-dia"></div></section>
       <section class="panel oliva" aria-labelledby="h-res-mes"><h2 id="h-res-mes">Resultado do mês</h2><div class="cards" id="cards-mes"></div><ul class="barras" id="formas-mes"></ul><div class="acoes" id="acoes-mes"></div></section>
     </div>
+    <div class="res-grid" style="margin-top:24px">
+      <section class="panel oliva" aria-labelledby="h-itens-dia"><h2 id="h-itens-dia">Suprimentos e retiradas do dia</h2><div class="totais" id="itens-dia" aria-live="polite"></div></section>
+      <section class="panel oliva" aria-labelledby="h-itens-mes"><h2 id="h-itens-mes">Suprimentos e retiradas do mês</h2><div class="totais" id="itens-mes" aria-live="polite"></div></section>
+    </div>
     <section class="panel" aria-labelledby="h-dias" style="margin-top:24px"><h2 id="h-dias">Mês</h2><ul class="barras" id="dias-mes"></ul><div class="acoes" id="acoes-mesbarra"></div></section>
     <p class="hint">Passe o mouse (ou toque) em cada linha para ver a porcentagem e a escala de crescimento.</p>
   </section>
@@ -483,7 +487,12 @@ function copiaGeral(dias, porDia) {
   }
   linhas.push(...linhasSubtotal(todas).map(l => l.map(celulaCsv).join(';')));
   const cab = 'Data;Abertura;Suprimento/Retirada;PIX;Débito;Crédito;Dinheiro;Vendas (total);Saídas;Coleta/Cofre;Conferência/Caixa (gaveta);Comandas';
-  return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';'))].join('\r\n') + '\r\n';
+  // Quadro de itens: cada suprimento (+) e retirada (−) com o produto (o Motivo) e o valor, e o total no fim (só se houve lançamento)
+  const itens = itensMovs(dias);
+  const blocoItens = itens.length ? ['', 'Suprimentos e retiradas', 'Data;Tipo;Hora;Produto (motivo);Valor (R$);Lançado por',
+    ...itens.map(i => [dataBR(i.iso), i.tipo === 'sup' ? 'Suprimento' : 'Retirada', i.hora, i.produto, reais(i.valor), i.por].map(celulaCsv).join(';')),
+    ['Total (suprimentos − retiradas)', '', '', '', reais(itens.reduce((a, i) => a + i.valor, 0)), ''].map(celulaCsv).join(';')] : [];
+  return '﻿' + [...linhas, '', 'Resumo do caixa', cab, ...resumo.map(r => r.join(';')), ...blocoItens].join('\r\n') + '\r\n';
 }
 // Planilha formatada (.xlsx) da cópia diária e semanal: as mesmas linhas do CSV, com bordas, cores e valores como número (R$),
 // e, abaixo, o painel de apresentação (vendas por forma, balanço geral, comandas e 3 gráficos que se calculam sozinhos pelas células).
@@ -567,22 +576,29 @@ function desenhoGraficos(ancoras) { // [{ c0, r0, c1, r1 }] na ordem dos gráfic
 // Texto CSV da cópia (com BOM e ";") -> arquivo .xlsx (Uint8Array)
 function xlsxDeCsv(csv) {
   const linhas = csv.replace(/^﻿/, '').split(/\r?\n/).map(camposCsv);
-  const letra = i => String.fromCharCode(65 + i), linhasXml = [], juntas = []; let resumo = false, n = 0;
-  let priPag = 0, ultPag = 0, cabRes = 0, priRes = 0, ultRes = 0; const dias = [], pagLinhas = [];
+  const letra = i => String.fromCharCode(65 + i), linhasXml = [], juntas = []; let resumo = false, itens = false, n = 0;
+  let priPag = 0, ultPag = 0, cabRes = 0, priRes = 0, ultRes = 0, priIt = 0, ultIt = 0; const dias = [], pagLinhas = [], itensLin = [];
+  // Valor com sinal em centavos ("-105,00" = −10500): as retiradas e o saldo podem ser negativos (parseValor não aceita "-")
+  const parseSinal = t => { const s = String(t).trim(); return s.startsWith('-') ? (parseValor(s.slice(1)) === null ? null : -parseValor(s.slice(1))) : parseValor(s); };
   for (const r of linhas) {
     n++;
     if (r.length === 1 && r[0] === '') { linhasXml.push(`<row r="${n}"/>`); continue; }
-    const tipo = r[0] === 'Resumo do caixa' ? 'titulo' : r[0] === 'Data' ? 'cab' : /^Subtotal/.test(r[0]) ? 'sub' : /^Total geral/.test(r[0]) ? 'total' : 'dado';
-    if (tipo === 'titulo') resumo = true;
+    const tipo = r[0] === 'Resumo do caixa' || r[0] === 'Suprimentos e retiradas' ? 'titulo' : r[0] === 'Data' ? 'cab' : /^Subtotal/.test(r[0]) ? 'sub' : /^Total geral/.test(r[0]) ? 'total' : /^Total \(suprimentos/.test(r[0]) ? 'totalmov' : 'dado';
+    if (tipo === 'titulo') { resumo = r[0] === 'Resumo do caixa'; itens = r[0] === 'Suprimentos e retiradas'; }
     if (tipo === 'cab' && resumo) cabRes = n;
-    if (tipo === 'dado' && !resumo) { priPag = priPag || n; ultPag = n; pagLinhas.push(r); }
-    if (tipo === 'dado' && resumo) { priRes = priRes || n; ultRes = n; dias.push(r.map((v, i) => i === 0 ? v : i === 11 ? Number(v) : (parseValor(v) || 0) / 100)); }
-    const dinheiro = i => resumo ? i >= 1 && i <= 10 : [2, 5, 7, 8, 9, 10, 11].includes(i);
+    if (tipo === 'dado' && !resumo && !itens) { priPag = priPag || n; ultPag = n; pagLinhas.push(r); }
+    if (tipo === 'dado' && resumo) { priRes = priRes || n; ultRes = n; dias.push(r.map((v, i) => i === 0 ? v : i === 11 ? Number(v) : (parseSinal(v) || 0) / 100)); }
+    if (tipo === 'dado' && itens) { priIt = priIt || n; ultIt = n; itensLin.push((parseSinal(r[4]) || 0) / 100); }
+    const dinheiro = i => itens ? i === 4 : resumo ? i >= 1 && i <= 10 : [2, 5, 7, 8, 9, 10, 11].includes(i);
     const cels = r.map((v, i) => {
       const ref = letra(i) + n; let est = tipo === 'titulo' ? 1 : tipo === 'cab' ? 2 : 3, num = null;
-      if (tipo === 'sub' || tipo === 'total') { est = (tipo === 'sub' ? 5 : 7) + (i >= 7 && v !== '' ? 1 : 0); if (i >= 7 && v !== '') num = parseValor(v); }
+      if (tipo === 'totalmov') { // total do quadro de itens: soma das linhas de cima (se mudar um valor, o total acompanha)
+        est = i === 4 ? 8 : 7;
+        if (i === 4) return `<c r="${ref}" s="8"><f>SUM(E${priIt}:E${ultIt})</f><v>${(parseSinal(v) || 0) / 100}</v></c>`;
+      }
+      else if (tipo === 'sub' || tipo === 'total') { est = (tipo === 'sub' ? 5 : 7) + (i >= 7 && v !== '' ? 1 : 0); if (i >= 7 && v !== '') num = parseValor(v); }
       else if (tipo === 'dado') {
-        if (dinheiro(i) && v !== '') { num = parseValor(v); est = 4; }
+        if (dinheiro(i) && v !== '') { num = parseSinal(v); est = 4; }
         else if (resumo && i === 11 && v !== '') { num = Number(v); est = 9; }
         else if (dinheiro(i)) est = 4;
       }
@@ -590,6 +606,7 @@ function xlsxDeCsv(csv) {
       return v === '' ? `<c r="${ref}" s="${est}"/>` : `<c r="${ref}" s="${est}" t="inlineStr"><is><t>${xmlEsc(v)}</t></is></c>`;
     });
     if (tipo === 'sub' || tipo === 'total') juntas.push(`<mergeCell ref="A${n}:G${n}"/>`);
+    if (tipo === 'totalmov') juntas.push(`<mergeCell ref="A${n}:D${n}"/>`);
     linhasXml.push(`<row r="${n}"${tipo === 'cab' ? ' ht="32" customHeight="1"' : ' ht="20" customHeight="1"'}>${cels.join('')}</row>`);
   }
 
@@ -610,8 +627,11 @@ function xlsxDeCsv(csv) {
     const rt = h + 5, balanco = [
       ['Abertura de caixa (início)', 'B' + priRes, aberturaIni, 4], ['Suprimento/Retirada (saldo)', `SUM(C${priRes}:C${ultRes})`, soma(2), 4], ['Vendas (total)', `SUM(H${priRes}:H${ultRes})`, vendas, 4],
       ['Saídas', `SUM(I${priRes}:I${ultRes})`, soma(8), 4], ['Coleta/Cofre', `SUM(J${priRes}:J${ultRes})`, soma(9), 4], ['Conferência/Caixa (final)', 'K' + ultRes, conf, 4],
-      ['Comandas (quantidade)', `SUM(L${priRes}:L${ultRes})`, qtd, 9], ['Ticket médio por comanda', `IFERROR(H${h + 3}/H${h + 7},0)`, qtd ? vendas / qtd : 0, 4], ['Maior comanda (total da conta)', `MAX(C${priPag}:C${ultPag})`, maior, 4]];
-    for (let k = 0; k < 9; k++) {
+      // cópia do que foi lançado em Suprimento/Retirada (lê o quadro de itens, mais abaixo); fica depois da Conferência para o gráfico do balanço seguir as 6 primeiras linhas
+      ['Total de suprimentos (+)', priIt ? `SUMIF(E${priIt}:E${ultIt},"&gt;0")` : '', itensLin.filter(v => v > 0).reduce((a, v) => a + v, 0), 4],
+      ['Total de retiradas (−)', priIt ? `-SUMIF(E${priIt}:E${ultIt},"&lt;0")` : '', -itensLin.filter(v => v < 0).reduce((a, v) => a + v, 0), 4],
+      ['Comandas (quantidade)', `SUM(L${priRes}:L${ultRes})`, qtd, 9], ['Ticket médio por comanda', `IFERROR(H${h + 3}/H${h + 9},0)`, qtd ? vendas / qtd : 0, 4], ['Maior comanda (total da conta)', `MAX(C${priPag}:C${ultPag})`, maior, 4]];
+    for (let k = 0; k < balanco.length; k++) {
       const r = h + 1 + k, esq = [];
       if (k < 4) esq.push(T('A' + r, 3, tipos[k]), E('B' + r, 3), V('C' + r, 4, formas[k], `SUM(${colRes[k]}${priRes}:${colRes[k]}${ultRes})`), V('D' + r, 10, vendas ? formas[k] / vendas : 0, `IFERROR(C${r}/C$${rt},0)`));
       else if (k === 4) esq.push(T('A' + r, 7, 'Total de vendas'), E('B' + r, 7), V('C' + r, 8, vendas, `SUM(C${h + 1}:C${h + 4})`), V('D' + r, 11, vendas ? 1 : 0, `IFERROR(C${r}/C$${rt},0)`));
@@ -620,7 +640,7 @@ function xlsxDeCsv(csv) {
       if (k < 5) juntas.push(`<mergeCell ref="A${r}:B${r}"/>`);
       juntas.push(`<mergeCell ref="F${r}:G${r}"/>`);
     }
-    const iniG = h + 11; // linha (zero-based) onde começam os gráficos
+    const iniG = h + 13; // linha (zero-based) onde começam os gráficos (o balanço tem 11 linhas)
     // Evolução comanda a comanda (acumulado por forma e total): alimenta o gráfico de linhas
     const grupos = new Map();
     for (const r of pagLinhas) {
@@ -1475,6 +1495,21 @@ function renderResultados() {
       + (zBar ? `\nContando desde que foi zerado (${zBar.quando})` : escalaCrescimento(diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), null, rB.centavos)),
     pct(fracao, 1)));
   acoes($('acoes-mesbarra'), 'res-mesbarra-' + mes, rMes, zBar, 'resultado do mês');
+  // Quadro de itens de suprimento e retirada (produto = Motivo), do dia e do mês, com os totais no fim
+  const span = t => Object.assign(document.createElement('span'), { textContent: t });
+  const quadro = (box, itens, comData) => {
+    const sup = itens.filter(i => i.valor > 0).reduce((a, i) => a + i.valor, 0), ret = -itens.filter(i => i.valor < 0).reduce((a, i) => a + i.valor, 0);
+    const lin = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
+    box.replaceChildren(...(itens.length ? itens.map(i => {
+      const d = document.createElement('div'), esq = span(i.produto);
+      esq.append(Object.assign(document.createElement('small'), { className: 'hint mov-motivo', textContent: `${comData ? dataBR(i.iso).slice(0, 5) + ' · ' : ''}${i.hora.slice(0, 5)} · ${i.tipo === 'sup' ? 'Suprimento' : 'Retirada'} · ${i.por}` }));
+      d.append(esq, span((i.valor > 0 ? '+ ' : '− ') + fmt(Math.abs(i.valor)))); return d;
+    }) : [Object.assign(document.createElement('p'), { className: 'empty', textContent: 'Nenhum lançamento.' })]),
+    lin('Total de suprimentos', '+ ' + fmt(sup)), lin('Total de retiradas', '− ' + fmt(ret)), lin('Total (suprimentos − retiradas)', fmt(sup - ret), 'geral dia destaque'));
+  };
+  const diasDoMes = Array.from({ length: +ultimo }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`);
+  $('h-itens-dia').textContent = `Suprimentos e retiradas do dia ${dataBR(dia)}`; $('h-itens-mes').textContent = `Suprimentos e retiradas de ${nomeMes}`;
+  quadro($('itens-dia'), itensMovs([dia]), false); quadro($('itens-mes'), itensMovs(diasDoMes), true);
 }
 
 // Dica flutuante: mouse, teclado (foco) e toque, nas duas abas (quadro Total e Resultados)
@@ -1537,6 +1572,10 @@ function lerMovs(iso) {
   const antigo = lerValor('abastecimento', iso); // valor digitado antes desta versão vira um lançamento
   return antigo ? [{ hora: '—', tipo: antigo > 0 ? 'sup' : 'ret', valor: Math.abs(antigo), motivo: 'Lançado antes do controle por senha', por: '—' }] : [];
 }
+// Itens de suprimento (+) e retirada (−) de um ou mais dias, em centavos com sinal; o Motivo é o nome do produto.
+// Lançamento corrigido não conta; o de dia já finalizado (fechado) continua, porque é o histórico do que foi lançado.
+const itensMovs = isos => isos.flatMap(iso => lerMovs(iso).filter(m => !m.corrigido).map(m => ({ iso, hora: m.hora, tipo: m.tipo, produto: m.motivo, por: m.por, valor: m.tipo === 'sup' ? m.valor : -m.valor })))
+  .sort((a, b) => (a.iso + (a.hora === '—' ? '' : a.hora)) < (b.iso + (b.hora === '—' ? '' : b.hora)) ? -1 : 1);
 function gravarMovs(iso, l) { memoriaMovs[iso] = l; try { localStorage.setItem(chaveMovs(iso), JSON.stringify(l)); } catch {} gravarValor('abastecimento', iso, saldoMovs(l)); }
 function renderMovs() {
   const iso = $('data').value || hojeISO(), l = lerMovs(iso), span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
@@ -1684,6 +1723,22 @@ if (/[?&]teste\b/.test(location.search)) {
        && (g.match(/Subtotal de vendas/g) || []).length === 1, 'cópia geral: colunas por forma (também de comandas antigas) e um só subtotal e total geral');
     ok(comandasDoCsv(csvComanda('21/10/2026', '10:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [5000])).length === 1, 'o app ainda lê o CSV com as linhas de subtotal');
     { const x = new TextDecoder().decode(xlsxDeCsv(g)); ok(x.includes('xl/charts/chart4.xml') && x.includes('Evolução das vendas, comanda a comanda') && x.includes('<c:lineChart>') && x.includes('21/10 09:00') && x.includes('21/10 10:00'), 'planilha .xlsx traz o painel com 4 gráficos, inclusive a evolução comanda a comanda (linhas)'); }
+    { // Quadro de itens de suprimento/retirada: cópia, planilha (balanço + quadro com total) e aba Resultados; corrigido não conta; saldo negativo não vira 0
+      const d = '1999-06-07';
+      gravarMovs(d, [{ hora: '09:00:00', tipo: 'sup', valor: 5000, motivo: 'troco', por: 'Pilar' }, { hora: '10:30:00', tipo: 'ret', valor: 10500, motivo: 'compra de gás', por: 'Pilar' },
+        { hora: '11:00:00', tipo: 'ret', valor: 999, motivo: 'erro', por: 'Pilar', corrigido: { por: 'Pilar', hora: '11:01:00' } }]);
+      const c = copiaGeral([d], new Map([[d, [csvComanda('07/06/1999', '12:00:00', 5000, [{ nome: 'Ana', pag: 'dinheiro' }], [5000])]]]));
+      const x = new TextDecoder().decode(xlsxDeCsv(c));
+      const rd = $('res-dia').value, rm = $('res-mes').value; $('res-dia').value = d; $('res-mes').value = d.slice(0, 7); renderResultados();
+      const tDia = $('itens-dia').innerText, tMes = $('itens-mes').innerText; $('res-dia').value = rd; $('res-mes').value = rm;
+      ok(c.includes('Suprimentos e retiradas\r\nData;Tipo;Hora;Produto (motivo);Valor (R$);Lançado por\r\n07/06/1999;Suprimento;09:00:00;troco;50,00;Pilar\r\n07/06/1999;Retirada;10:30:00;compra de gás;-105,00;Pilar\r\nTotal (suprimentos − retiradas);;;;-55,00;')
+         && !c.includes('erro'), 'cópia traz o quadro de itens (produto = motivo, retirada com sinal −) e o total no fim; lançamento corrigido não entra');
+      ok(x.includes('Total de suprimentos (+)') && x.includes('Total de retiradas (−)') && x.includes('SUMIF(E') && x.includes('<f>SUM(E') && x.includes('compra de gás') && !x.includes('>erro<') && x.includes('<v>-0.55</v>') === false && x.includes('<v>-55</v>'),
+        'planilha .xlsx: balanço geral com total de suprimentos e de retiradas, quadro de itens com total em fórmula e saldo negativo preservado');
+      ok(tDia.includes('compra de gás') && tDia.includes('troco') && tDia.includes('Total de retiradas') && tDia.includes('Total (suprimentos − retiradas)') && !tDia.includes('erro') && tMes.includes('07/06') && tMes.includes('compra de gás'),
+        'aba Resultados mostra o quadro de itens do dia e do mês, com os totais no fim');
+      try { localStorage.removeItem(chaveMovs(d)); } catch {} delete memoriaMovs[d]; gravarValor('abastecimento', d, 0);
+    }
   }
   zerarDia('1999-01-01'); somarDia('1999-01-01', { pix: 6000, credito: 4000 }); somarDia('1999-01-01', { pix: 2550 });
   const d99 = lerDia('1999-01-01'); zerarDia('1999-01-01');
