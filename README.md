@@ -5,3 +5,7 @@ Calculadora de comanda do Bookafé: tem campo de data e registra os pagamentos d
 Página única (HTML, CSS e JavaScript no mesmo arquivo). Não precisa instalar nada: baixe o `index.html` e abra com duplo clique no navegador.
 
 Feito em português do Brasil, valores em reais.
+
+## Ícone e instalação
+
+O ícone do app é o logo preto do BooKafé (`bookafe-v3-*.png`; as versões `maskable` são para o Android). Ao trocar o ícone, mude o nome dos arquivos (v4...) e suba o `CACHE` do `sw.js`, senão celular, WhatsApp e PC continuam com o antigo. A página tem as tags `og:` para a prévia do link no WhatsApp. A instalação como aplicativo (PC, Android e iPhone) só é oferecida depois da senha da Pilar ou da Kely.
