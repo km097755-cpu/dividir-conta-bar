@@ -839,6 +839,7 @@ function avisar(msg, ms = 3000) {
 
 const $ = id => document.getElementById(id);
 let pessoas = [];
+let comandaPendente = null; // data e hora da comanda cujo arquivo já foi gravado, mas a cópia para a planilha falhou (tentar de novo regrava o mesmo arquivo)
 $('data').value = hojeISO();
 const mostraPasta = () => {
   if (!pastaComandas) return;
@@ -859,14 +860,32 @@ if ('showDirectoryPicker' in window) {
   $('pasta-fech-hint').textContent = 'Neste navegador não dá para escolher pasta: o fechamento vai para Downloads. No computador, use o Chrome.';
   $('pasta-hint').textContent = 'Neste navegador não dá para escolher pasta: cada comanda finalizada vai para Downloads. No computador, use o Chrome para salvar direto em E:\\Bookafé.';
 }
+// Grava no navegador (texto null = apaga). Se falhar (aba anônima, memória do aparelho cheia, iPhone limpou os dados), mostra um aviso
+// fixo e, daí em diante, os ler* usam o que está na memória desta aba (senão o valor novo seria ignorado e voltaria o antigo)
+var falhouGravar = false; // var: os ler*/gravar* podem rodar no carregamento antes desta linha
+function guardaLocal(chave, texto) {
+  try { texto == null ? localStorage.removeItem(chave) : localStorage.setItem(chave, texto); return true; }
+  catch {
+    if (!falhouGravar) {
+      falhouGravar = true;
+      const el = Object.assign(document.createElement('div'), { id: 'falha-gravar', textContent: 'Atenção: este aparelho NÃO está salvando os dados do caixa (aba anônima ou memória cheia). Não feche nem recarregue a página: finalize o dia para salvar o fechamento em arquivo e use outro navegador.' });
+      el.setAttribute('role', 'alert');
+      el.style.cssText = 'position:sticky;top:0;z-index:1000;background:#b00020;color:#fff;padding:10px 14px;font-weight:600;text-align:center';
+      document.body.prepend(el);
+    }
+    return false;
+  }
+}
+try { navigator.storage?.persist?.().catch(() => {}); } catch {} // pede ao navegador para não apagar os dados sozinho (iPhone/Android com pouco espaço)
 // Total do dia: soma do valor pago (menos troco) das comandas finalizadas, guardado no navegador por data (não some ao abrir comanda nova)
 const memoriaDia = {};
 const chaveDia = iso => 'bookafe-total-dia-' + iso;
 function lerDia(iso) {
+  if (falhouGravar && memoriaDia[iso]) return memoriaDia[iso];
   try { const v = JSON.parse(localStorage.getItem(chaveDia(iso))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
   return memoriaDia[iso] || { centavos: 0, comandas: 0, formas: {} };
 }
-function gravarDia(iso, v) { memoriaDia[iso] = v; try { localStorage.setItem(chaveDia(iso), JSON.stringify(v)); } catch {} }
+function gravarDia(iso, v) { memoriaDia[iso] = v; guardaLocal(chaveDia(iso), JSON.stringify(v)); }
 function somarDia(iso, porForma) {
   const d = lerDia(iso), formas = { ...(d.formas || {}) };
   let soma = 0;
@@ -877,12 +896,13 @@ function somarDia(iso, porForma) {
 const memoriaComandas = {};
 const chaveComandas = iso => 'bookafe-comandas-dia-' + iso;
 function lerComandasDia(iso) {
+  if (falhouGravar && memoriaComandas[iso]) return memoriaComandas[iso];
   try { const v = JSON.parse(localStorage.getItem(chaveComandas(iso))); if (Array.isArray(v)) return v; } catch {}
   return memoriaComandas[iso] || [];
 }
 function guardarComanda(iso, c) {
   const l = [...lerComandasDia(iso), c]; memoriaComandas[iso] = l;
-  try { localStorage.setItem(chaveComandas(iso), JSON.stringify(l)); } catch {}
+  guardaLocal(chaveComandas(iso), JSON.stringify(l));
 }
 const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; try { localStorage.removeItem(chaveDia(iso)); localStorage.removeItem(chaveComandas(iso)); } catch {} };
 // Zerar um quadro sem apagar nada: guarda quanto ele tinha naquele momento (o "marco") e o quadro mostra só o que entrou depois.
@@ -890,10 +910,11 @@ const zerarDia = iso => { delete memoriaDia[iso]; delete memoriaComandas[iso]; t
 const memoriaMarco = {};
 const chaveMarco = c => 'bookafe-zero-' + c;
 function lerMarco(c) {
+  if (falhouGravar && c in memoriaMarco) return memoriaMarco[c];
   try { const v = JSON.parse(localStorage.getItem(chaveMarco(c))); if (v && Number.isInteger(v.centavos)) return v; } catch {}
   return memoriaMarco[c] || null;
 }
-function gravarMarco(c, v) { memoriaMarco[c] = v; try { v ? localStorage.setItem(chaveMarco(c), JSON.stringify(v)) : localStorage.removeItem(chaveMarco(c)); } catch {} }
+function gravarMarco(c, v) { memoriaMarco[c] = v; guardaLocal(chaveMarco(c), v ? JSON.stringify(v) : null); }
 const agoraTxt = () => `${dataBR(hojeISO())} ${horaAgora().slice(0, 5)}`;
 // Marco "dd/mm/aaaa hh:mm" → "aaaa-mm-dd hh:mm" (para comparar com as comandas); sem marco, ''
 const marcoDesde = z => { const m = z && /(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2})/.exec(z.quando); return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : ''; };
@@ -912,8 +933,8 @@ function descontarZero(r, z) {
 const VALORES_DIA = ['abertura', 'abastecimento', 'saidas', 'coleta'];
 // Contagem da gaveta: [{ hora, contado, esperado, por }] por data; a diferença (sobra/falta) é contado − esperado naquela hora
 const memoriaCont = {}, chaveCont = iso => 'bookafe-contagem-' + iso;
-function lerContagens(iso) { try { const v = JSON.parse(localStorage.getItem(chaveCont(iso))); if (Array.isArray(v)) return v; } catch {} return memoriaCont[iso] || []; }
-function gravarContagens(iso, l) { memoriaCont[iso] = l; try { l.length ? localStorage.setItem(chaveCont(iso), JSON.stringify(l)) : localStorage.removeItem(chaveCont(iso)); } catch {} }
+function lerContagens(iso) { if (falhouGravar && memoriaCont[iso]) return memoriaCont[iso]; try { const v = JSON.parse(localStorage.getItem(chaveCont(iso))); if (Array.isArray(v)) return v; } catch {} return memoriaCont[iso] || []; }
+function gravarContagens(iso, l) { memoriaCont[iso] = l; guardaLocal(chaveCont(iso), l.length ? JSON.stringify(l) : null); }
 // Lança a diferença da contagem i no Suprimento/Retirada do dia (o caixa passa a bater com o que foi contado) e marca a contagem
 function lancarDiferenca(iso, i, por) {
   const l = lerContagens(iso), c = l[i], d = c.contado - c.esperado, hora = horaAgora();
@@ -925,10 +946,11 @@ function difTxt(d) { return d > 0 ? `Sobrou ${fmt(d)}` : d < 0 ? `Faltou ${fmt(-
 const memoriaValor = {};
 const chaveValor = (tipo, iso) => `bookafe-${tipo}-${iso}`;
 function lerValor(tipo, iso) {
+  if (falhouGravar && chaveValor(tipo, iso) in memoriaValor) return memoriaValor[chaveValor(tipo, iso)] || 0;
   try { const v = localStorage.getItem(chaveValor(tipo, iso)); if (v !== null) return Number(v) || 0; } catch {}
   return memoriaValor[chaveValor(tipo, iso)] || 0;
 }
-function gravarValor(tipo, iso, c) { memoriaValor[chaveValor(tipo, iso)] = c; try { c ? localStorage.setItem(chaveValor(tipo, iso), String(c)) : localStorage.removeItem(chaveValor(tipo, iso)); } catch {} }
+function gravarValor(tipo, iso, c) { memoriaValor[chaveValor(tipo, iso)] = c; guardaLocal(chaveValor(tipo, iso), c ? String(c) : null); }
 // Página aberta desde ontem (ou data trocada): avisa para não lançar o dia de hoje na data errada
 const avisoData = () => { const d = $('data').value; $('data-aviso').textContent = d && d !== hojeISO() ? `Atenção: a data do caixa é ${dataBR(d)}, mas hoje é ${dataBR(hojeISO())}. Confira antes de lançar.` : ''; };
 addEventListener('focus', avisoData); document.addEventListener('visibilitychange', avisoData);
@@ -969,7 +991,8 @@ $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
 // Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas, pasta e a senha de quem fecha
 function novaComanda() {
-  pessoas = []; $('total').value = ''; // a senha de quem fecha continua (pedida uma vez só) $('novo-valor').value = ''; $('nova-pag').value = '';
+  pessoas = []; $('total').value = ''; comandaPendente = null; // a senha de quem fecha continua (pedida uma vez só)
+  $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
 const opcoesPagamento = () => [new Option('Pagou com…', ''), ...Object.entries(PAGAMENTOS).map(([v, t]) => new Option(t, v))];
@@ -1138,15 +1161,18 @@ function botaoConfirma(texto, acao) {
 }
 // Botão "Finalizar o dia" (dois toques), no quadro Fechamento do dia
 $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', async () => {
-  const iso = $('data').value || hojeISO(), onde = await salvarFechamento(iso);
+  const iso = $('data').value || hojeISO();
+  const onde = await salvarFechamento(iso).catch(e => { avisar(`Erro ao salvar o fechamento (${e && e.message || e}).`, 12000); return ''; });
   // O Saldo do caixa (o contado na última contagem; sem contagem, o calculado) vira a abertura do dia seguinte, fixa
   const ult = lerContagens(iso).at(-1), sobra = ult ? ult.contado : conferenciaDe(iso), amanha = diaSeguinte(iso);
-  gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
-  // Com o fechamento salvo (tem tudo do dia), limpa a comanda aberta e risca os lançamentos de suprimento/retirada (fechado:
-  // ficam na lista, fora do saldo; o dia seguinte começa sem eles). As vendas continuam nos Resultados. Sem arquivo, não mexe em nada.
-  if (onde) { gravarMovs(iso, lerMovs(iso).map(m => ({ ...m, fechado: true }))); novaComanda(); mostraValoresDia(); calcular(); if (!$('tela-movs').hidden) renderMovs(); }
+  // Com o fechamento salvo (tem tudo do dia): fixa a abertura de amanhã, limpa a comanda aberta e risca os lançamentos de suprimento/retirada
+  // (fechado: ficam na lista, fora do saldo; o dia seguinte começa sem eles). As vendas continuam nos Resultados. Sem arquivo, não mexe em nada.
+  if (onde) {
+    gravarValor('abertura', amanha, sobra); gravarValor('abmanual', amanha, 1);
+    gravarMovs(iso, lerMovs(iso).map(m => ({ ...m, fechado: true }))); novaComanda(); mostraValoresDia(); calcular(); if (!$('tela-movs').hidden) renderMovs();
+  }
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: ` + (onde ? `fechamento completo salvo ${onde}.` : 'não foi possível salvar o arquivo do fechamento (nada foi apagado; tente de novo).')
-    + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}: essa é a abertura de caixa de ${dataBR(amanha)}.`
+    + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}` + (onde ? `: essa é a abertura de caixa de ${dataBR(amanha)}.` : `; a abertura de caixa de ${dataBR(amanha)} não foi mudada.`)
     + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
 }), { className: 'btn' }));
 // Zerar abertura de caixa (senha da Pilar, da Solange, do Kleber ou da Kely): zera todo o caixa do dia, também o que está gravado no navegador —
@@ -1276,16 +1302,21 @@ function calcularResultado() {
   });
   async function finalizar(op) {
     if (finalizando) return;
-    const iso = $('data').value || hojeISO(), hora = horaAgora(), data = dataBR(iso);
+    // Tentar de novo (a cópia para a planilha falhou) usa a mesma data e hora: regrava o MESMO arquivo, e a venda não entra duas vezes
+    comandaPendente ||= { iso: $('data').value || hojeISO(), hora: horaAgora() };
+    const { iso, hora } = comandaPendente, data = dataBR(iso);
+    const lista = pessoas.map(p => ({ ...p })); // o que estava na tela no toque: mexer nos pagamentos durante o salvamento não mistura as contas
     finalizando = true;
     let onde, ok;
     try {
-      onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, pessoas, r.partes, op), iso);
-      ok = await copiarTexto(linhasPlanilha(data, hora, total, pessoas, r.partes));
+      onde = await salvarCopia(`Comanda ${iso} ${hora.replace(/:/g, '-')}.csv`, csvComanda(data, hora, total, lista, r.partes, op), iso);
+      ok = await copiarTexto(linhasPlanilha(data, hora, total, lista, r.partes));
+    } catch (e) {
+      return avisar(`Erro ao finalizar (${e && e.message || e}). A comanda continua aberta; tente de novo.`, 12000);
     } finally { finalizando = false; }
     // Só abre a comanda nova se as linhas foram copiadas (senão a comanda continua na tela)
     if (!ok) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
-    const liq = liquidoPorForma(pessoas.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
+    const liq = liquidoPorForma(lista.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
     somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
     novaComanda();
     avisar(`Comanda das ${hora} (fechada por ${op}) copiada (cole na planilha com Ctrl+V)` + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
@@ -1575,6 +1606,7 @@ function corrigirMov(iso, i, por) {
   gravarMovs(iso, l); return l[i];
 }
 function lerMovs(iso) {
+  if (falhouGravar && memoriaMovs[iso]) return memoriaMovs[iso];
   let l = null; try { l = JSON.parse(localStorage.getItem(chaveMovs(iso))); } catch {}
   if (!Array.isArray(l)) l = memoriaMovs[iso] || null;
   if (l) return l;
@@ -1585,7 +1617,7 @@ function lerMovs(iso) {
 // Lançamento corrigido não conta; o de dia já finalizado (fechado) continua, porque é o histórico do que foi lançado.
 const itensMovs = isos => isos.flatMap(iso => lerMovs(iso).filter(m => !m.corrigido).map(m => ({ iso, hora: m.hora, tipo: m.tipo, produto: m.motivo, por: m.por, valor: m.tipo === 'sup' ? m.valor : -m.valor })))
   .sort((a, b) => (a.iso + (a.hora === '—' ? '' : a.hora)) < (b.iso + (b.hora === '—' ? '' : b.hora)) ? -1 : 1);
-function gravarMovs(iso, l) { memoriaMovs[iso] = l; try { localStorage.setItem(chaveMovs(iso), JSON.stringify(l)); } catch {} gravarValor('abastecimento', iso, saldoMovs(l)); }
+function gravarMovs(iso, l) { memoriaMovs[iso] = l; guardaLocal(chaveMovs(iso), JSON.stringify(l)); gravarValor('abastecimento', iso, saldoMovs(l)); }
 function renderMovs() {
   const iso = $('data').value || hojeISO(), l = lerMovs(iso), span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
   const linhaM = (a, b, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.append(span(a), span(b)); return d; };
@@ -1665,7 +1697,8 @@ $('res-copias').addEventListener('click', async () => {
 });
 
 // Autoteste: abra a página com ?teste na URL.
-if (/[?&]teste\b/.test(location.search)) {
+// Autoteste: só no computador (servidor local ou arquivo aberto direto). Na página publicada, "?teste" não faz nada (antes destravava o caixa)
+if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname)) {
   const log = [], ok = (c, m) => log.push((c ? 'OK   ' : 'FALHA') + ' ' + m);
   const soma = a => a.reduce((x, y) => x + y, 0);
   { // Abrir o caixa: o app abre travado; senha errada não abre; senha de colaborador abre e já fica como quem fecha
@@ -1991,6 +2024,40 @@ if (/[?&]teste\b/.test(location.search)) {
       ok(nomes.length === 2 && nomes2.length === 2, 'Resultados lê a raiz e Comandas\\(mês) sem repetir');
     } catch (e) { ok(false, 'pastas e cópias: ' + e.message); }
     finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); }
+    { // Finalizar com falha (revisão de 14/11/2026): tentar de novo não duplica a venda; erro avisa; aparelho sem gravar avisa e não perde comanda;
+      // finalizar o dia sem salvar o arquivo não mexe na abertura de amanhã
+      const sv = salvarCopia, ct = copiarTexto, sf = salvarFechamento, dataF = $('data').value, antes = pessoas, qf = quemFecha, d = '1999-10-10', amanha = diaSeguinte(d);
+      $('data').value = d; zerarDia(d); quemFecha = 'Teste';
+      const nomes = []; let copia = false;
+      salvarCopia = async n => { nomes.push(n); return 'teste'; }; copiarTexto = async () => copia;
+      const comanda = async v => { $('total').value = v; pessoas = [{ nome: '', valor: null, pag: 'pix' }]; calcular(); $('copiar-planilha').click(); await new Promise(r => setTimeout(r, 30)); };
+      try {
+        await comanda('10,00'); const falhou = lerDia(d).comandas === 0 && pessoas.length === 1;
+        await new Promise(r => setTimeout(r, 1100)); copia = true; $('copiar-planilha').click(); await new Promise(r => setTimeout(r, 30));
+        ok(falhou && nomes.length === 2 && nomes[0] === nomes[1] && lerDia(d).comandas === 1 && lerDia(d).centavos === 1000,
+          'cópia para a planilha falhou e tentou de novo: regrava o mesmo arquivo e a venda conta uma vez só');
+        salvarCopia = async () => { throw new Error('disco cheio'); };
+        await comanda('15,00');
+        ok($('aviso').textContent.includes('Erro ao finalizar') && lerDia(d).comandas === 1 && pessoas.length === 1, 'erro ao gravar a comanda avisa e a comanda continua aberta');
+        salvarCopia = async () => 'teste';
+        const set = Storage.prototype.setItem; Storage.prototype.setItem = () => { throw new DOMException('cheio', 'QuotaExceededError'); };
+        try { await comanda('20,00'); await comanda('30,00'); } finally { Storage.prototype.setItem = set; }
+        const dd = lerDia(d), aviso = !!$('falha-gravar');
+        falhouGravar = false; $('falha-gravar')?.remove();
+        ok(aviso && dd.comandas === 3 && dd.centavos === 6000, 'aparelho sem gravar: aviso fixo na tela e nenhuma comanda some do total do dia');
+        salvarFechamento = async () => '';
+        gravarValor('abertura', amanha, 1234);
+        const fim = [...$('acoes-fechamento').querySelectorAll('button')].find(b => b.textContent === 'Finalizar o dia');
+        fim.click(); fim.click(); await new Promise(r => setTimeout(r, 30));
+        ok(lerValor('abertura', amanha) === 1234 && !lerValor('abmanual', amanha) && $('fechamento-status').textContent.includes('não foi mudada'),
+          'finalizar o dia sem conseguir salvar o arquivo não muda a abertura de amanhã');
+      } catch (e) { ok(false, 'finalizar com falha: ' + e.message); }
+      finally {
+        falhouGravar = false; $('falha-gravar')?.remove();
+        gravarValor('abertura', amanha, 0); gravarValor('abmanual', amanha, 0); zerarDia(d); $('fechamento-status').textContent = '';
+        salvarCopia = sv; copiarTexto = ct; salvarFechamento = sf; $('data').value = dataF; pessoas = antes; quemFecha = qf; mostraQuemFecha(); novaComanda(); mostraValoresDia();
+      }
+    }
     const falhas = log.filter(l => l.startsWith('FALHA')).length;
     const el = $('teste'); el.hidden = false;
     el.textContent = `Autoteste: ${log.length - falhas}/${log.length} ok\n\n` + log.join('\n');
