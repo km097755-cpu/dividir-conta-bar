@@ -1,6 +1,6 @@
 {
-  "name": "Bookafé",
-  "short_name": "Bookafé",
+  "name": "Caixa",
+  "short_name": "Caixa",
   "description": "Comanda, pagamentos e caixa do Bookafé.",
   "lang": "pt-BR",
   "start_url": "./",

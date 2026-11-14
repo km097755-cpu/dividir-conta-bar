@@ -1,6 +1,6 @@
 // Bookafé (Comanda) instalado como aplicativo: abre sem internet.
 // Com internet, sempre busca a versão nova (rede primeiro) e guarda uma cópia; sem internet, usa a cópia guardada.
-const CACHE = 'bookafe-comanda-v6';
+const CACHE = 'bookafe-comanda-v7';
 const BASE = ['./', './index.html', './manifest.webmanifest', './bookafe-v3-192.png', './bookafe-v3-512.png', './bookafe-v3-180.png'];
 
 self.addEventListener('install', e => {
