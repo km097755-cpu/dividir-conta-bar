@@ -795,6 +795,16 @@ function escalaCrescimento(etapas, k, total = 0) {
   const antes = l.length - 12;
   return '\nEscala de crescimento:\n' + (antes > 0 ? `… ${antes} etapa${antes === 1 ? '' : 's'} antes\n` : '') + l.slice(-12).join('\n');
 }
+// Valor de cada comanda paga numa forma (todas, na ordem da hora); muitas comandas vão lado a lado para caber na tela
+function valoresDasComandas(etapas, k, total = 0) {
+  const vs = etapas.map(e => ({ r: e.rotulo, v: e.formas[k] || 0 })).filter(e => e.v);
+  const registrado = vs.reduce((a, e) => a + e.v, 0);
+  if (total > registrado) vs.unshift({ r: 'sem hora', v: total - registrado });
+  if (!vs.length) return '';
+  const porLinha = vs.length > 60 ? 3 : vs.length > 15 ? 2 : 1, l = [];
+  for (let i = 0; i < vs.length; i += porLinha) l.push(vs.slice(i, i + porLinha).map(e => `${e.r}  ${fmt(e.v)}`).join('  ·  '));
+  return '\nValor de cada comanda:\n' + l.join('\n');
+}
 // Linha de uma forma de pagamento: nome, barra na cor da forma, % e valor; a dica abre ao passar o mouse em qualquer parte
 function linhaFormaPct(k, nome, v, total, dica) {
   const span = (t, c) => Object.assign(document.createElement('span'), { textContent: t, className: c || '' });
@@ -1495,13 +1505,13 @@ function renderResultados() {
       Object.assign(document.createElement('span'), { className: 'val', textContent: fmt(valor) }), Object.assign(document.createElement('span'), { className: 'sr', textContent: ' — ' + dica }));
     return li;
   };
-  const formas = (box, r, quando, etapas, qtd = {}) => {
+  const formas = (box, r, quando, detalhe, qtd = {}) => {
     const ks = [...Object.keys(PAGAMENTOS), ...(r.formas[''] ? [''] : [])];
     box.replaceChildren(...ks.map(k => {
       const v = r.formas[k] || 0, bol = Object.assign(document.createElement('span'), { className: 'bolinha ' + CLASSE_FORMA[k] });
       const n = qtd[k] || 0;
       return linha([bol, `${nomeForma(k)} · ${n}`], v, [[CLASSE_FORMA[k], r.centavos ? v / r.centavos * 100 : 0]],
-        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}\n${n} comanda${n === 1 ? '' : 's'} paga${n === 1 ? '' : 's'} com ${nomeForma(k)}` + (etapas ? escalaCrescimento(etapas, k, v) : '\nContando desde que foi zerado'), pct(v, r.centavos));
+        `${nomeForma(k)}: ${pct(v, r.centavos)} ${quando}\n${fmt(v)} de ${fmt(r.centavos)}\n${n} comanda${n === 1 ? '' : 's'} paga${n === 1 ? '' : 's'} com ${nomeForma(k)}` + detalhe(k, v), pct(v, r.centavos));
     }));
     if (!r.comandas) box.append(Object.assign(document.createElement('li'), { className: 'empty', textContent: `Nenhuma comanda ${quando.replace('do', 'neste')}.` }));
   };
@@ -1512,8 +1522,11 @@ function renderResultados() {
   // Quantas comandas usaram cada forma (da pasta ou do navegador); com o quadro zerado, só as de depois de zerar
   const listaDe = iso => etapasRes.get(iso) || lerComandasDia(iso);
   const qDia = contarPorForma([[dia, cmdDia]], marcoDesde(zDia)), qMes = contarPorForma(diasMes.map(([iso]) => [iso, listaDe(iso)]), marcoDesde(zMes));
-  cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', zDia ? null : cmdDia.map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas })), qDia);
-  cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', zMes ? null : diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas })), qMes);
+  // Dica do dia: o valor de cada comanda da forma (todas); com o quadro zerado, só as de depois de zerar
+  const dDia = marcoDesde(zDia), etDia = cmdDia.filter(c => !dDia || `${dia} ${c.hora.slice(0, 5)}` >= dDia).map(c => ({ rotulo: c.hora.slice(0, 5), formas: c.formas }));
+  const etMes = diasMes.map(([iso, d]) => ({ rotulo: dataBR(iso).slice(0, 5), formas: d.formas }));
+  cards($('cards-dia'), vDia); formas($('formas-dia'), vDia, 'do dia', (k, v) => (zDia ? '\nContando desde que foi zerado' : '') + valoresDasComandas(etDia, k, v), qDia);
+  cards($('cards-mes'), vMes); formas($('formas-mes'), vMes, 'do mês', (k, v) => zMes ? '\nContando desde que foi zerado' : escalaCrescimento(etMes, k, v), qMes);
   const acoes = (box, chave, r, z, oque) => box.replaceChildren(
     ...(z ? [Object.assign(document.createElement('p'), { className: 'hint', textContent: `Zerado em ${z.quando}${z.por ? ` por ${z.por}` : ''}: mostrando só o que entrou depois.` })] : []),
     ...(r.comandas ? [botaoSupervisor(`Zerar ${oque}`, op => { gravarMarco(chave, { ...r, quando: agoraTxt(), por: op }); renderResultados(); })] : []),
@@ -1812,6 +1825,10 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
      'comandas sem hora entram como primeira etapa e a escala fecha no total');
   const muitas = escalaCrescimento(Array.from({ length: 15 }, (_, i) => ({ rotulo: 'e' + i, formas: { pix: 100 } })), 'pix', 1500);
   ok(muitas.includes('… 3 etapas antes') && muitas.endsWith(`→ ${fmt(1500)} = 100,0%`), 'escala longa mostra as 12 últimas com o acumulado certo');
+  const vc = valoresDasComandas(Array.from({ length: 20 }, (_, i) => ({ rotulo: 'h' + i, formas: i % 2 ? { pix: 100 } : { pix: 200, dinheiro: 50 } })), 'pix', 3000);
+  ok(vc.startsWith(`\nValor de cada comanda:\nh0  ${fmt(200)}  ·  h1  ${fmt(100)}\n`) && vc.split('\n').length === 12 && vc.endsWith(`h19  ${fmt(100)}`)
+     && valoresDasComandas([{ rotulo: '10:00', formas: { pix: 100 } }], 'pix', 400) === `\nValor de cada comanda:\nsem hora  ${fmt(300)}\n10:00  ${fmt(100)}`
+     && valoresDasComandas([{ rotulo: '10:00', formas: { pix: 100 } }], 'debito', 0) === '', 'dica do dia lista o valor de todas as comandas da forma (sem cortar nas 12 últimas)');
   ok(diaSeguinte('2026-10-31') === '2026-11-01' && diaSeguinte('2026-12-31') === '2027-01-01', 'dia seguinte vira o mês e o ano');
   const dz = descontarZero({ centavos: 9000, comandas: 5, formas: { pix: 6000, dinheiro: 3000 } }, { centavos: 4000, comandas: 2, formas: { pix: 4000 } });
   ok(dz.centavos === 5000 && dz.comandas === 3 && dz.formas.pix === 2000 && dz.formas.dinheiro === 3000, 'zerar porcentagem do mês conta só o que entrou depois');
@@ -1949,9 +1966,9 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
       const pcs = () => [...$('formas-dia').querySelectorAll('li')].map(li => li.firstChild.textContent + '=' + li.querySelector('.pc').textContent).join('|');
       const antes = pcs();
       somarDia(d, { pix: 10000 }); guardarComanda(d, { hora: '11:00:00', formas: { pix: 10000 } }); await carregarResultados(false);
-      const depois = pcs();
+      const depois = pcs(), dicaPix = $('formas-dia').querySelector('li').dataset.dica;
       zerarDia(d); pastaComandas = pastaR; $('res-dia').value = resD;
-      ok(antes.includes('Crédito · 1=100,0%') && depois.includes('PIX · 1=50,0%') && depois.includes('Crédito · 1=50,0%'),
+      ok(antes.includes('Crédito · 1=100,0%') && depois.includes('PIX · 1=50,0%') && depois.includes('Crédito · 1=50,0%') && dicaPix.endsWith(`Valor de cada comanda:\n11:00  ${fmt(10000)}`),
         'Resultado do dia mostra a % de cada forma e ela muda a cada comanda finalizada');
     }
     { // Fechar comanda: a senha é pedida uma vez (no primeiro Finalizar) e vale para as próximas (arquivo e cópia de mentira)
