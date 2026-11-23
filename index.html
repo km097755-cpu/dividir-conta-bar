@@ -720,13 +720,18 @@ async function atualizarCopias(iso) {
 // Sem pasta escolhida (computador com Chrome/Edge): pede a pasta UMA vez, no primeiro salvamento, e guarda a escolha.
 // Daí em diante cada comanda e cada fechamento são gravados sozinhos, sem abrir a janela "Salvar como" a cada comanda (pedido do Kleber, 23/11/2026).
 // Se cancelar, não pergunta de novo até recarregar o app (vai para Downloads, como antes).
-let pastaRecusada = false;
+// Cancelou a escolha uma vez: fica lembrado neste navegador e o app não abre mais essa janela sozinho (só pelo botão "Escolher pasta").
+const CHAVE_RECUSA = 'bookafe-pasta-recusada';
+let pastaRecusada = (() => { try { return localStorage.getItem(CHAVE_RECUSA) === '1'; } catch { return false; } })();
 async function pedirPastaUmaVez() {
   if (pastaComandas || pastaRecusada || !('showDirectoryPicker' in window)) return;
   try {
     pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite', startIn: 'documents' });
     await guardaPasta('put', pastaComandas); mostraPasta();
-  } catch { pastaRecusada = true; }
+  } catch (e) {
+    // AbortError = a pessoa cancelou; outro erro (ex.: sem toque recente, no fechar sozinha) não conta como recusa
+    if (e && e.name === 'AbortError') { pastaRecusada = true; try { localStorage.setItem(CHAVE_RECUSA, '1'); } catch {} }
+  }
 }
 // Salva a comanda em Comandas\<mês> da pasta escolhida e atualiza as cópias; sem pasta ou permissão, baixa (Downloads). Devolve onde salvou.
 async function salvarCopia(nome, texto, iso) {
@@ -871,7 +876,7 @@ const mostraPasta = () => {
 };
 // A mesma pasta serve para as comandas e para o fechamento do dia; os dois botões escolhem essa pasta
 async function escolherPasta() {
-  try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite', startIn: 'documents' }); pastaRecusada = false; await guardaPasta('put', pastaComandas); mostraPasta(); }
+  try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite', startIn: 'documents' }); pastaRecusada = false; try { localStorage.removeItem(CHAVE_RECUSA); } catch {} await guardaPasta('put', pastaComandas); mostraPasta(); }
   catch { /* escolha cancelada */ }
 }
 if ('showDirectoryPicker' in window) {
@@ -2119,10 +2124,13 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
         const salvas = []; for await (const [n] of arquivosComanda(raiz)) salvas.push(n);
         pastaComandas = null; pastaRecusada = false; window.showDirectoryPicker = async () => { pedidos++; throw new DOMException('cancelou', 'AbortError'); };
         await salvarCopia('Comanda 1999-02-02 12-00-00.csv', 'c', '1999-02-02'); await salvarCopia('Comanda 1999-02-02 13-00-00.csv', 'd', '1999-02-02');
-        ok(pedidos === 2 && o1.includes('Comandas\\1999-02 Fevereiro') && o2.includes('Comandas\\1999-02 Fevereiro') && salvas.length === 2 && baixou === 2,
+        const lembrou = localStorage.getItem(CHAVE_RECUSA) === '1';
+        localStorage.removeItem(CHAVE_RECUSA); pastaComandas = null; pastaRecusada = false; window.showDirectoryPicker = async () => { pedidos++; throw new DOMException('sem toque', 'SecurityError'); };
+        await salvarCopia('Comanda 1999-02-02 14-00-00.csv', 'e', '1999-02-02'); const naoLembrou = !pastaRecusada && localStorage.getItem(CHAVE_RECUSA) === null;
+        ok(lembrou && naoLembrou && pedidos === 3 && baixou === 3 && o1.includes('Comandas\\1999-02 Fevereiro') && o2.includes('Comandas\\1999-02 Fevereiro') && salvas.length === 2,
           'sem pasta: pede a pasta uma vez e as próximas comandas salvam sozinhas; se cancelar, vai para Downloads sem perguntar de novo');
       } catch (e) { ok(false, 'pedir pasta uma vez: ' + e.message); }
-      finally { pastaComandas = guardada; guardaPasta = gp; baixarArquivo = bx; pastaRecusada = rec; if (sdp) window.showDirectoryPicker = sdp; else delete window.showDirectoryPicker; }
+      finally { pastaComandas = guardada; guardaPasta = gp; baixarArquivo = bx; pastaRecusada = rec; if (!rec) localStorage.removeItem(CHAVE_RECUSA); if (sdp) window.showDirectoryPicker = sdp; else delete window.showDirectoryPicker; }
     }
     { // Finalizar com falha (revisão de 14/11/2026): tentar de novo não duplica a venda; erro avisa; aparelho sem gravar avisa e não perde comanda;
       // finalizar o dia sem salvar o arquivo não mexe na abertura de amanhã
