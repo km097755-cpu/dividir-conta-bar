@@ -1302,6 +1302,23 @@ function fecharSePronta() {
   if (r.falta || !r.pago || !pessoas.every(p => p.pag in PAGAMENTOS)) return;
   $('copiar-planilha')?.dispatchEvent(new Event('auto'));
 }
+// A comanda que acabou de fechar (sozinha ou pelo botão) continua no quadro Divisão de valores — total, cada pagamento com a forma
+// e "conta fechada" — até digitar o total da próxima (pedido do Kleber: o quadro não pode ficar vazio ao fechar)
+var ultimaFechada = null; // var: o calcular pode rodar no carregamento antes desta linha
+function mostrarFechada(out, c) {
+  const el = (tag, cls, txt) => Object.assign(document.createElement(tag), { className: cls || '', textContent: txt || '' });
+  const topo = el('div', 'total'); topo.append(el('span', 'label', 'Total da conta'), el('strong', '', fmt(c.total)));
+  const info = el('div', 'breakdown'); const l1 = el('div'); l1.append(el('span', '', `Comanda das ${c.hora.slice(0, 5)} · ${c.lista.length} pagamento${c.lista.length === 1 ? '' : 's'}`), el('span')); info.append(l1);
+  const ul = el('ul', 'rows');
+  c.lista.forEach((p, i) => {
+    const li = el('li'), who = el('span', 'who', nomeSeguro(p, i));
+    if (PAGAMENTOS[p.pag]) who.append(el('span', 'tag', PAGAMENTOS[p.pag]));
+    li.append(who, el('span', 'v', fmt(c.partes[i]))); ul.append(li);
+  });
+  const pago = c.partes.reduce((a, b) => a + b, 0);
+  const fim = el('div', 'check', `Pago: ${fmt(pago)} — conta fechada${c.salva ? ' e salva' : ''}.` + (c.troco ? ` Troco: ${fmt(c.troco)}.` : ''));
+  out.replaceChildren(topo, info, ul, fim, el('p', 'hint', 'Digite o total da próxima conta para abrir a nova comanda.'));
+}
 // Conta fechada mas falta a forma de algum pagamento: avisa no quadro (não fecha sozinha sem a forma)
 function dicaAuto(r) {
   const box = $('auto-fechar'); if (!box) return;
@@ -1320,7 +1337,11 @@ function calcularResultado() {
   const out = $('resultado');
   const dica = txt => out.replaceChildren(Object.assign(document.createElement('p'), { className: 'hint', textContent: txt }));
   // Campo ainda vazio não é erro: só pede o total
-  if ($('total').value.trim() === '') { $('total-err').textContent = ''; $('total').setAttribute('aria-invalid', 'false'); return dica('Digite o total da conta para ver a divisão.'); }
+  if ($('total').value.trim() === '') {
+    $('total-err').textContent = ''; $('total').setAttribute('aria-invalid', 'false');
+    return ultimaFechada ? mostrarFechada(out, ultimaFechada) : dica('Digite o total da conta para ver a divisão.');
+  }
+  ultimaFechada = null; // começou a próxima comanda
   const total = campo('total', 'o total da conta', MAX_CENTS);
   if (total === null) { out.innerHTML = '<div class="alert">Corrija o total da conta para ver a divisão.</div>'; return; }
   if (!pessoas.length) return dica('Adicione os pagamentos para ver quanto cada um paga.');
@@ -1380,6 +1401,7 @@ function calcularResultado() {
     if (!ok && !(auto && onde)) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     const liq = liquidoPorForma(lista.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
     somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
+    ultimaFechada = { hora, total, lista, partes: r.partes, troco: r.troco, salva: !!onde }; // continua no quadro até começar a próxima
     novaComanda();
     avisar(`Comanda das ${hora} (fechada por ${op}${auto ? ', sozinha' : ''}) ` + (ok ? 'copiada (cole na planilha com Ctrl+V)' : 'não foi copiada para a planilha')
       + (onde ? ` e salva ${onde}` : ' (a cópia em arquivo não foi salva)') + '. Nova comanda aberta.'
@@ -2051,7 +2073,8 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
       const adiciona = (total, pag, valor = '') => { $('total').value = total; calcular(); $('novo-valor').value = valor; $('nova-pag').value = pag; $('form-add').requestSubmit(); };
       try {
         adiciona('50,00', 'dinheiro'); await espera(60);
-        const d1 = lerDia(d), limpou = pessoas.length === 0 && $('total').value === '' && !document.body.innerText.includes('sozinha em');
+        const quadro = $('resultado').textContent, mostrou = quadro.includes('conta fechada e salva') && quadro.includes(fmt(5000)) && quadro.includes('Dinheiro');
+        const d1 = lerDia(d), limpou = mostrou && pessoas.length === 0 && $('total').value === '' && !document.body.innerText.includes('sozinha em');
         adiciona('20,00', ''); await espera(60); const semForma = lerDia(d).comandas === 1 && pessoas.length === 1 && $('auto-fechar').textContent.includes('Escolha a forma');
         novaComanda(); adiciona('40,00', 'pix', '10,00'); await espera(60); const parcial = lerDia(d).comandas === 1 && pessoas.length === 1; // pagou só parte: não fecha
         pessoas[0].valor = null; $('total').value = '3'; $('form-conta').dispatchEvent(new Event('input')); await espera(60);
@@ -2061,7 +2084,7 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
         ok(d1.comandas === 1 && d1.centavos === 5000 && (d1.formas || {}).dinheiro === 5000 && limpou && semForma && parcial && digitando && saiu && semCopia && salvas === 3,
           'fechar sozinha na hora: pagamento que completa a conta fecha e salva; sem forma ou pagando só parte não fecha; digitar o total não fecha; cópia falhando não segura');
       } catch (e) { ok(false, 'fechar sozinha: ' + e.message); }
-      finally { autoLigado = false; zerarDia(d); salvarCopia = sv; copiarTexto = ct; quemFecha = qf; $('data').value = dataF; pessoas = antes; novaComanda(); }
+      finally { autoLigado = false; ultimaFechada = null; zerarDia(d); salvarCopia = sv; copiarTexto = ct; quemFecha = qf; $('data').value = dataF; pessoas = antes; novaComanda(); }
     }
     // Suprimento/Retirada: lançamentos com senha de colaborador; o saldo vai para o caixa (teste com senha de mentira)
     gravarValor('abastecimento', '1999-05-05', 30000); const legado = lerMovs('1999-05-05');
