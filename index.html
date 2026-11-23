@@ -1019,7 +1019,7 @@ $('data').addEventListener('input', mostraValoresDia);
 mostraValoresDia();
 // Depois de finalizar: comanda nova em branco, mantendo data, abertura, saídas, pasta e a senha de quem fecha
 function novaComanda() {
-  pessoas = []; $('total').value = ''; comandaPendente = null; autoEsperar = false; // a senha de quem fecha continua (pedida uma vez só)
+  pessoas = []; $('total').value = ''; comandaPendente = null; // a senha de quem fecha continua (pedida uma vez só)
   $('novo-valor').value = ''; $('nova-pag').value = '';
   renderLista(); calcular(); $('total').focus();
 }
@@ -1054,7 +1054,8 @@ function renderLista() {
     pag.setAttribute('aria-label', `Forma do pagamento ${i + 1}`);
     pag.append(...opcoesPagamento());
     pag.value = p.pag || '';
-    pag.addEventListener('change', () => { p.pag = pag.value; calcular(); });
+    pag.addEventListener('change', () => { p.pag = pag.value; calcular(); fecharSePronta(); });
+    val.addEventListener('change', fecharSePronta); // terminou de digitar o valor (Enter ou saiu do campo)
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn-ghost'; rm.textContent = 'Remover';
     rm.setAttribute('aria-label', `Remover o pagamento ${i + 1}`);
     rm.addEventListener('click', () => { pessoas.splice(i, 1); renderLista(); calcular(); $('novo-valor').focus(); });
@@ -1289,25 +1290,23 @@ $('acoes-fechamento').append(botaoSupervisor('Limpar o dia (apagar testes)', op 
 
 function calcular() { calcularResultado(); renderTotais(); }
 let finalizando = false;
-// Fechar sozinha (pedido do Kleber, 23/11/2026): quando o quadro mostra "conta fechada" (ou o troco) e todo pagamento tem a forma
-// escolhida, a comanda é finalizada e salva sozinha depois de AUTO_SEG segundos, sem tocar no botão. Qualquer mudança recomeça a
-// contagem; "Esperar" segura até a próxima comanda (para dividir com mais gente). O botão Finalizar continua para quem quiser.
-let autoLigado = true, AUTO_SEG = 3, autoTimer = null, autoEsperar = false;
-function pararAuto() { clearInterval(autoTimer); autoTimer = null; }
-function agendarAuto(r) {
-  pararAuto();
+// Fechar sozinha (pedido do Kleber, 23/11/2026; sem contagem desde o mesmo dia): quando um pagamento completa a conta ("conta fechada"
+// ou troco) e todo pagamento tem a forma escolhida, a comanda é finalizada e salva na hora, sem tocar no botão.
+// Só dispara em ação de pagamento (Adicionar, trocar a forma, terminar de digitar um valor) ou ao sair do campo Total — nunca
+// enquanto se digita o total, senão "5" de "50" já fecharia. O botão Finalizar continua para quem quiser.
+let autoLigado = true;
+function fecharSePronta() {
+  if (!autoLigado || finalizando || !pessoas.length) return;
+  const total = parseValor($('total').value.trim()); if (total == null || !total) return;
+  const r = pagar(total, pessoas.map(p => p.valor));
+  if (r.falta || !r.pago || !pessoas.every(p => p.pag in PAGAMENTOS)) return;
+  $('copiar-planilha')?.dispatchEvent(new Event('auto'));
+}
+// Conta fechada mas falta a forma de algum pagamento: avisa no quadro (não fecha sozinha sem a forma)
+function dicaAuto(r) {
   const box = $('auto-fechar'); if (!box) return;
-  box.replaceChildren();
-  if (!autoLigado || autoEsperar || finalizando || !r || r.falta || !r.pago || !pessoas.length) return;
-  if (!pessoas.every(p => p.pag in PAGAMENTOS)) { box.textContent = 'Escolha a forma de cada pagamento para a comanda fechar sozinha.'; return; }
-  let s = AUTO_SEG;
-  const txt = Object.assign(document.createElement('span'), { className: 'check' });
-  const esp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Esperar' });
-  esp.setAttribute('aria-label', 'Esperar: não fechar a comanda sozinha agora');
-  esp.addEventListener('click', () => { autoEsperar = true; pararAuto(); box.textContent = 'Fechamento sozinho parado. Toque em Finalizar quando quiser.'; });
-  const mostra = () => { txt.textContent = `Fechando e salvando sozinha em ${s} s… `; };
-  mostra(); box.replaceChildren(txt, esp);
-  autoTimer = setInterval(() => { if (--s > 0) return mostra(); pararAuto(); box.replaceChildren(); $('copiar-planilha')?.dispatchEvent(new Event('auto')); }, 1000);
+  box.textContent = autoLigado && r && !r.falta && r.pago && pessoas.length && !pessoas.every(p => p.pag in PAGAMENTOS)
+    ? 'Escolha a forma de cada pagamento para a comanda fechar sozinha.' : '';
 }
 // Ao abrir o caixa (toque do colaborador), já deixa a pasta pronta: pede a pasta (uma vez só) ou a permissão de gravar,
 // para o fechamento sozinho gravar sem abrir janela nenhuma (o navegador só pergunta logo depois de um toque).
@@ -1318,7 +1317,6 @@ async function prepararPasta() {
 }
 
 function calcularResultado() {
-  pararAuto();
   const out = $('resultado');
   const dica = txt => out.replaceChildren(Object.assign(document.createElement('p'), { className: 'hint', textContent: txt }));
   // Campo ainda vazio não é erro: só pede o total
@@ -1393,7 +1391,7 @@ function calcularResultado() {
     const who = document.createElement('span'); who.className = 'who';
     const nome = Object.assign(document.createElement('input'), { type: 'text', id: 'res-nome-' + i, className: 'plain res-nome', value: p.nome, placeholder: `Pessoa ${i + 1}`, maxLength: 40, autocomplete: 'off' });
     nome.setAttribute('aria-label', `Nome da pessoa ${i + 1}`);
-    nome.addEventListener('input', () => { p.nome = nome.value; agendarAuto(r); }); // nome opcional; vazio = "Pessoa N"; digitar recomeça a contagem do fechar sozinha
+    nome.addEventListener('input', () => { p.nome = nome.value; }); // nome opcional; vazio = "Pessoa N"
     who.append(nome);
     if (PAGAMENTOS[p.pag]) who.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: PAGAMENTOS[p.pag] }));
     const cp = Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', textContent: 'Copiar cobrança' });
@@ -1405,7 +1403,7 @@ function calcularResultado() {
     li.append(who, Object.assign(document.createElement('span'), { className: 'v', textContent: fmt(r.partes[i]) }), cp);
     ul.append(li);
   });
-  agendarAuto(r);
+  dicaAuto(r);
   return r;
 }
 
@@ -1425,7 +1423,9 @@ $('form-add').addEventListener('submit', e => {
   $('valor-err').textContent = msg; el.setAttribute('aria-invalid', msg ? 'true' : 'false');
   if (msg) return;
   pessoas.push({ nome: '', valor, pag: $('nova-pag').value }); el.value = ''; $('nova-pag').value = ''; renderLista(); calcular(); el.focus();
+  fecharSePronta(); // o pagamento completou a conta: fecha e salva na hora
 });
+$('total').addEventListener('change', fecharSePronta); // corrigiu o total com os pagamentos já lançados: fecha ao sair do campo
 
 renderLista(); calcular(); mostraQuemFecha();
 
@@ -2042,21 +2042,26 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
       ok(pediu && errada === 'Senha errada.' && d1 === 1 && mostra.includes('Fechando a conta: Andrea') && d2.comandas === 2 && d2.centavos === 3000 && semPedir && trocou,
         'fechar comanda: senha pedida uma vez no primeiro Finalizar, vale para as próximas e dá para trocar de pessoa');
     }
-    { // Fechar sozinha: conta fechada com forma escolhida finaliza e salva sem tocar no botão; sem forma ou com "Esperar", não fecha
-      const sv = salvarCopia, ct = copiarTexto, dataF = $('data').value, antes = pessoas, qf = quemFecha, seg = AUTO_SEG, d = '1999-08-08';
+    { // Fechar sozinha, sem contagem: o pagamento que completa a conta (com forma) fecha e salva na hora; sem forma não fecha;
+      // digitar o total não fecha (só ao sair do campo); cópia da planilha falhando não segura a comanda já salva
+      const sv = salvarCopia, ct = copiarTexto, dataF = $('data').value, antes = pessoas, qf = quemFecha, d = '1999-08-08';
       let salvas = 0, copia = true; salvarCopia = async () => { salvas++; return 'teste'; }; copiarTexto = async () => copia;
-      $('data').value = d; zerarDia(d); quemFecha = 'Teste'; autoLigado = true; AUTO_SEG = 1;
-      const espera = ms => new Promise(r => setTimeout(r, ms)), monta = (v, pag) => { $('total').value = v; pessoas = [{ nome: '', valor: null, pag }]; calcular(); };
+      $('data').value = d; zerarDia(d); quemFecha = 'Teste'; autoLigado = true; novaComanda();
+      const espera = ms => new Promise(r => setTimeout(r, ms));
+      const adiciona = (total, pag, valor = '') => { $('total').value = total; calcular(); $('novo-valor').value = valor; $('nova-pag').value = pag; $('form-add').requestSubmit(); };
       try {
-        monta('50,00', 'dinheiro'); const contando = $('auto-fechar').textContent.includes('sozinha em 1 s'); await espera(1400);
-        const d1 = lerDia(d), limpou = pessoas.length === 0 && $('total').value === '';
-        monta('20,00', ''); await espera(1400); const semForma = lerDia(d).comandas === 1 && pessoas.length === 1 && $('auto-fechar').textContent.includes('Escolha a forma');
-        monta('20,00', 'pix'); $('auto-fechar').querySelector('button').click(); await espera(1400); const esperou = lerDia(d).comandas === 1 && pessoas.length === 1;
-        novaComanda(); copia = false; monta('30,00', 'credito'); await espera(1400); const semCopia = lerDia(d).comandas === 2 && pessoas.length === 0;
-        ok(contando && d1.comandas === 1 && d1.centavos === 5000 && (d1.formas || {}).dinheiro === 5000 && limpou && semForma && esperou && semCopia && salvas === 2,
-          'fechar sozinha: conta fechada com forma finaliza e salva sem tocar no botão; sem forma ou "Esperar" não fecha; cópia da planilha falhando não segura a comanda salva');
+        adiciona('50,00', 'dinheiro'); await espera(60);
+        const d1 = lerDia(d), limpou = pessoas.length === 0 && $('total').value === '' && !document.body.innerText.includes('sozinha em');
+        adiciona('20,00', ''); await espera(60); const semForma = lerDia(d).comandas === 1 && pessoas.length === 1 && $('auto-fechar').textContent.includes('Escolha a forma');
+        novaComanda(); adiciona('40,00', 'pix', '10,00'); await espera(60); const parcial = lerDia(d).comandas === 1 && pessoas.length === 1; // pagou só parte: não fecha
+        pessoas[0].valor = null; $('total').value = '3'; $('form-conta').dispatchEvent(new Event('input')); await espera(60);
+        const digitando = lerDia(d).comandas === 1 && pessoas.length === 1;
+        $('total').value = '30,00'; calcular(); $('total').dispatchEvent(new Event('change')); await espera(60); const saiu = lerDia(d).comandas === 2 && pessoas.length === 0;
+        copia = false; adiciona('15,00', 'credito'); await espera(60); const semCopia = lerDia(d).comandas === 3 && pessoas.length === 0;
+        ok(d1.comandas === 1 && d1.centavos === 5000 && (d1.formas || {}).dinheiro === 5000 && limpou && semForma && parcial && digitando && saiu && semCopia && salvas === 3,
+          'fechar sozinha na hora: pagamento que completa a conta fecha e salva; sem forma ou pagando só parte não fecha; digitar o total não fecha; cópia falhando não segura');
       } catch (e) { ok(false, 'fechar sozinha: ' + e.message); }
-      finally { pararAuto(); autoLigado = false; AUTO_SEG = seg; zerarDia(d); salvarCopia = sv; copiarTexto = ct; quemFecha = qf; $('data').value = dataF; pessoas = antes; novaComanda(); }
+      finally { autoLigado = false; zerarDia(d); salvarCopia = sv; copiarTexto = ct; quemFecha = qf; $('data').value = dataF; pessoas = antes; novaComanda(); }
     }
     // Suprimento/Retirada: lançamentos com senha de colaborador; o saldo vai para o caixa (teste com senha de mentira)
     gravarValor('abastecimento', '1999-05-05', 30000); const legado = lerMovs('1999-05-05');
