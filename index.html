@@ -292,7 +292,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
         <div class="field">
           <span class="field-title">Pasta das comandas</span>
           <button type="button" class="btn-ghost" id="escolher-pasta">Escolher pasta das comandas</button>
-          <div class="hint" id="pasta-hint">Cada comanda finalizada é salva em Comandas\(mês) dentro desta pasta, e o app atualiza sozinho a Cópia diária e a Cópia semanal, também separadas por mês (ex.: F:\Bookafé (Comandas)). Sem pasta escolhida, o arquivo vai para Downloads.</div>
+          <div class="hint" id="pasta-hint">Cada comanda finalizada é salva em Comandas\(mês) dentro desta pasta, e o app atualiza sozinho a Cópia diária e a Cópia semanal, também separadas por mês (ex.: Documentos\Bookafé (Comandas)). Se ainda não tiver pasta, o app pede a pasta uma vez só, na primeira comanda finalizada; depois salva sozinho.</div>
         </div>
        </div>
       </form>
@@ -355,7 +355,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
         <div class="field">
           <span class="field-title">Pasta onde salvar</span>
           <button type="button" class="btn-ghost" id="escolher-pasta-fech">Escolher pasta onde salvar</button>
-          <div class="hint" id="pasta-fech-hint">Nenhuma pasta escolhida: o fechamento vai para Downloads. Ex.: F:\Bookafé (Comandas).</div>
+          <div class="hint" id="pasta-fech-hint">Nenhuma pasta escolhida: o app pede a pasta uma vez só e depois salva sozinho. Ex.: Documentos\Bookafé (Comandas).</div>
         </div>
       </div>
       <div class="check" id="aviso" role="status" aria-live="polite"></div>
@@ -717,8 +717,20 @@ async function atualizarCopias(iso) {
   try { await gravarArquivo(pDia, `Dia ${iso}.xlsx`, xlsxDeCsv(csvDia)); await gravarArquivo(pSem, `Semana ${ini} a ${dias[6]}.xlsx`, xlsxDeCsv(csvSem)); } catch {}
 }
 
+// Sem pasta escolhida (computador com Chrome/Edge): pede a pasta UMA vez, no primeiro salvamento, e guarda a escolha.
+// Daí em diante cada comanda e cada fechamento são gravados sozinhos, sem abrir a janela "Salvar como" a cada comanda (pedido do Kleber, 23/11/2026).
+// Se cancelar, não pergunta de novo até recarregar o app (vai para Downloads, como antes).
+let pastaRecusada = false;
+async function pedirPastaUmaVez() {
+  if (pastaComandas || pastaRecusada || !('showDirectoryPicker' in window)) return;
+  try {
+    pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite', startIn: 'documents' });
+    await guardaPasta('put', pastaComandas); mostraPasta();
+  } catch { pastaRecusada = true; }
+}
 // Salva a comanda em Comandas\<mês> da pasta escolhida e atualiza as cópias; sem pasta ou permissão, baixa (Downloads). Devolve onde salvou.
 async function salvarCopia(nome, texto, iso) {
+  await pedirPastaUmaVez();
   if (pastaComandas) {
     try {
       const opt = { mode: 'readwrite' };
@@ -757,6 +769,7 @@ async function fechamentoDoDia(iso, comPasta) {
 // Grava em Fechamento do dia\<mês>\Fechamento AAAA-MM-DD HH-MM-SS.csv (cada finalização fica guardada); sem pasta, baixa
 async function salvarFechamento(iso) {
   const nome = `Fechamento ${iso} ${horaAgora().replace(/:/g, '-')}.csv`;
+  await pedirPastaUmaVez();
   if (pastaComandas) {
     try {
       const opt = { mode: 'readwrite' };
@@ -858,7 +871,7 @@ const mostraPasta = () => {
 };
 // A mesma pasta serve para as comandas e para o fechamento do dia; os dois botões escolhem essa pasta
 async function escolherPasta() {
-  try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite' }); await guardaPasta('put', pastaComandas); mostraPasta(); }
+  try { pastaComandas = await showDirectoryPicker({ id: 'bookafe-comandas', mode: 'readwrite', startIn: 'documents' }); pastaRecusada = false; await guardaPasta('put', pastaComandas); mostraPasta(); }
   catch { /* escolha cancelada */ }
 }
 if ('showDirectoryPicker' in window) {
@@ -2041,6 +2054,21 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
       ok(nomes.length === 2 && nomes2.length === 2, 'Resultados lê a raiz e Comandas\\(mês) sem repetir');
     } catch (e) { ok(false, 'pastas e cópias: ' + e.message); }
     finally { pastaComandas = guardada; for (const t of VALORES_DIA) gravarValor(t, '1999-03-03', 0); }
+    { // Sem pasta: a primeira comanda pede a pasta uma vez só e as seguintes gravam sozinhas (sem "Salvar como"); cancelar não pergunta de novo
+      const guardada = pastaComandas, gp = guardaPasta, sdp = window.showDirectoryPicker, bx = baixarArquivo, rec = pastaRecusada;
+      let pedidos = 0, baixou = 0; const raiz = Object.assign(pastaFalsa('Auto'), { queryPermission: async () => 'granted' });
+      guardaPasta = async () => {}; baixarArquivo = async () => { baixou++; return 'em Downloads'; };
+      try {
+        pastaComandas = null; pastaRecusada = false; window.showDirectoryPicker = async () => { pedidos++; return raiz; };
+        const o1 = await salvarCopia('Comanda 1999-02-02 10-00-00.csv', 'a', '1999-02-02'), o2 = await salvarCopia('Comanda 1999-02-02 11-00-00.csv', 'b', '1999-02-02');
+        const salvas = []; for await (const [n] of arquivosComanda(raiz)) salvas.push(n);
+        pastaComandas = null; pastaRecusada = false; window.showDirectoryPicker = async () => { pedidos++; throw new DOMException('cancelou', 'AbortError'); };
+        await salvarCopia('Comanda 1999-02-02 12-00-00.csv', 'c', '1999-02-02'); await salvarCopia('Comanda 1999-02-02 13-00-00.csv', 'd', '1999-02-02');
+        ok(pedidos === 2 && o1.includes('Comandas\\1999-02 Fevereiro') && o2.includes('Comandas\\1999-02 Fevereiro') && salvas.length === 2 && baixou === 2,
+          'sem pasta: pede a pasta uma vez e as próximas comandas salvam sozinhas; se cancelar, vai para Downloads sem perguntar de novo');
+      } catch (e) { ok(false, 'pedir pasta uma vez: ' + e.message); }
+      finally { pastaComandas = guardada; guardaPasta = gp; baixarArquivo = bx; pastaRecusada = rec; if (sdp) window.showDirectoryPicker = sdp; else delete window.showDirectoryPicker; }
+    }
     { // Finalizar com falha (revisão de 14/11/2026): tentar de novo não duplica a venda; erro avisa; aparelho sem gravar avisa e não perde comanda;
       // finalizar o dia sem salvar o arquivo não mexe na abertura de amanhã
       const sv = salvarCopia, ct = copiarTexto, sf = salvarFechamento, dataF = $('data').value, antes = pessoas, qf = quemFecha, d = '1999-10-10', amanha = diaSeguinte(d);
