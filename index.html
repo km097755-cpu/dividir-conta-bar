@@ -351,7 +351,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
         </div>
         <div class="totais" id="sobra-caixa" aria-live="polite"></div>
         <div class="acoes" id="acoes-fechamento"></div>
-        <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads). "Imprimir comandas do dia" manda todas as comandas da data do caixa para a impressora de notinhas, numa tira só (Margens: Nenhuma).</p>
+        <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads). "Imprimir resumo do dia" manda o resumo da data do caixa (comandas, total por forma e total do dia) para a impressora de notinhas (Margens: Nenhuma).</p>
         <div class="field">
           <span class="field-title">Pasta onde salvar</span>
           <button type="button" class="btn-ghost" id="escolher-pasta-fech">Escolher pasta onde salvar</button>
@@ -1204,41 +1204,27 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
     + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}` + (onde ? `: essa é a abertura de caixa de ${dataBR(amanha)}.` : `; a abertura de caixa de ${dataBR(amanha)} não foi mudada.`)
     + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
 }), { className: 'btn' }));
-// Impressão do fim do dia (impressora de notinhas Bematech/Elgin, bobina de 80 mm): todas as comandas da data do caixa numa tira só,
-// um ticket por comanda e o resumo no fim. Não pede senha e não muda nada: dá para imprimir de novo. Comanda antiga (só hora e formas) sai sem os nomes.
-const escHtml = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-function ticketsDoDia(iso) {
+// Impressão do fim do dia (impressora de notinhas Bematech/Elgin, bobina de 80 mm): só o resumo do dia da data do caixa
+// (quantas comandas, total por forma, total do dia). Não pede senha e não muda nada: dá para imprimir de novo.
+function resumoDoDia(iso) {
   const lista = lerComandasDia(iso);
   if (!lista.length) return '';
-  const linha = (a, b, cls = '') => `<div class="l${cls ? ' ' + cls : ''}"><span>${escHtml(a)}</span><span>${escHtml(b)}</span></div>`;
-  const nomeForma = k => PAGAMENTOS[k] || 'Sem forma';
-  const tickets = lista.map(c => {
-    const soma = Object.values(c.formas || {}).reduce((x, y) => x + y, 0);
-    const pessoas = Array.isArray(c.pag) && c.pag.length
-      ? c.pag.map(p => `<div class="p">${escHtml(p.nome)}</div>` + linha(nomeForma(p.forma), fmt(p.valor), 'sub')).join('')
-      : Object.entries(c.formas || {}).map(([k, v]) => linha(nomeForma(k), fmt(v))).join('');
-    return `<section class="ticket"><div class="c">BOOKAFÉ</div><div class="c">Comanda das ${escHtml(c.hora)}</div><div class="c">${dataBR(iso)}</div><hr>`
-      + pessoas + '<hr>' + linha('TOTAL', fmt(Number.isInteger(c.total) ? c.total : soma), 'g')
-      + (c.troco ? linha('Troco', fmt(c.troco)) : '') + (c.por ? `<div class="c">Fechada por ${escHtml(c.por)}</div>` : '')
-      + '<div class="corte">- - - - - - - - - - - - - - - -</div></section>';
-  });
+  const linha = (a, b, cls = '') => `<div class="l${cls ? ' ' + cls : ''}"><span>${a}</span><span>${b}</span></div>`;
   const formas = {}; for (const c of lista) for (const [k, v] of Object.entries(c.formas || {})) formas[k] = (formas[k] || 0) + v;
   const geral = Object.values(formas).reduce((x, y) => x + y, 0);
-  const resumo = `<section class="ticket"><div class="c g">RESUMO DO DIA</div><div class="c">${dataBR(iso)} · impresso às ${horaAgora().slice(0, 5)}</div><hr>`
-    + linha('Comandas', String(lista.length)) + Object.keys(PAGAMENTOS).filter(k => formas[k]).map(k => linha(PAGAMENTOS[k], fmt(formas[k]))).join('')
-    + '<hr>' + linha('TOTAL DO DIA', fmt(geral), 'g') + '<div class="c">(troco já descontado)</div></section>';
-  return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Comandas ' + dataBR(iso) + '</title><style>'
+  return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Resumo ' + dataBR(iso) + '</title><style>'
     + '@page{margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#000}'
     + 'body{width:72mm;padding:2mm 1mm 8mm;font:12px/1.35 "Courier New",Consolas,monospace}'
-    + '.ticket{break-inside:avoid;page-break-inside:avoid;padding-bottom:2mm}.c{text-align:center}.g{font-weight:700;font-size:13px}'
-    + '.l{display:flex;justify-content:space-between;gap:2mm}.l span:last-child{white-space:nowrap}.sub{padding-left:3mm}.p{font-weight:700;margin-top:1mm;overflow-wrap:anywhere}'
-    + 'hr{border:0;border-top:1px dashed #000;margin:1.5mm 0}.corte{text-align:center;margin:3mm 0 2mm;letter-spacing:0}'
-    + '</style></head><body>' + tickets.join('') + resumo + '</body></html>';
+    + '.c{text-align:center}.g{font-weight:700;font-size:13px}.l{display:flex;justify-content:space-between;gap:2mm}.l span:last-child{white-space:nowrap}'
+    + 'hr{border:0;border-top:1px dashed #000;margin:1.5mm 0}'
+    + `</style></head><body><div class="c g">BOOKAFÉ</div><div class="c g">RESUMO DO DIA</div><div class="c">${dataBR(iso)} · impresso às ${horaAgora().slice(0, 5)}</div><hr>`
+    + linha('Comandas', String(lista.length)) + Object.keys(PAGAMENTOS).filter(k => formas[k]).map(k => linha(PAGAMENTOS[k], fmt(formas[k]))).join('')
+    + '<hr>' + linha('TOTAL DO DIA', fmt(geral), 'g') + '<div class="c">(troco já descontado)</div></body></html>';
 }
-function imprimirComandas(iso) {
-  const html = ticketsDoDia(iso);
-  if (!html) return avisar(`Nenhuma comanda finalizada em ${dataBR(iso)} para imprimir.`, 6000), false;
-  const fr = Object.assign(document.createElement('iframe'), { title: 'Impressão das comandas' });
+function imprimirResumo(iso) {
+  const html = resumoDoDia(iso);
+  if (!html) return avisar(`Nenhuma comanda finalizada em ${dataBR(iso)}: não há resumo para imprimir.`, 6000), false;
+  const fr = Object.assign(document.createElement('iframe'), { title: 'Impressão do resumo do dia' });
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.append(fr);
   const doc = fr.contentDocument; doc.open(); doc.write(html); doc.close();
@@ -1247,8 +1233,8 @@ function imprimirComandas(iso) {
   setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { avisar(`Não foi possível abrir a impressão (${e && e.message || e}).`, 8000); } setTimeout(tira, 60000); }, 150);
   return true;
 }
-$('acoes-fechamento').append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', id: 'imprimir-comandas', textContent: 'Imprimir comandas do dia',
-  onclick: () => imprimirComandas($('data').value || hojeISO()) }));
+$('acoes-fechamento').append(Object.assign(document.createElement('button'), { type: 'button', className: 'btn-ghost', id: 'imprimir-resumo', textContent: 'Imprimir resumo do dia',
+  onclick: () => imprimirResumo($('data').value || hojeISO()) }));
 // Zerar abertura de caixa (senha da Pilar, da Solange, do Kleber ou da Kely): zera todo o caixa do dia, também o que está gravado no navegador —
 // abertura (fica 0, não volta a vir do dia anterior), suprimentos/retiradas, saídas, coleta e contagens. As vendas continuam.
 function zerarAbertura(iso) {
@@ -1445,9 +1431,7 @@ function calcularResultado() {
     // No fechar sozinha, a comanda já gravada no arquivo fecha mesmo se a cópia para a planilha falhar (o arquivo é o registro)
     if (!ok && !(auto && onde)) return avisar('Não foi possível copiar para a planilha. Tente de novo; a comanda continua aberta.', 8000);
     const liq = liquidoPorForma(lista.map(p => p.pag), r.partes, r.troco); // o troco volta para o cliente: entra no dia só o que ficou
-    // Pessoas, total, troco e quem fechou: para o ticket da impressão do fim do dia
-    somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq, total, troco: r.troco || 0, por: op,
-      pag: lista.map((p, i) => ({ nome: nomeSeguro(p, i), forma: p.pag || '', valor: r.partes[i] })) });
+    somarDia(iso, liq); guardarComanda(iso, { hora, formas: liq });
     ultimaFechada = { hora, total, lista, partes: r.partes, troco: r.troco, salva: !!onde }; // continua no quadro até começar a próxima
     novaComanda();
     avisar(`Comanda das ${hora} (fechada por ${op}${auto ? ', sozinha' : ''}) ` + (ok ? 'copiada (cole na planilha com Ctrl+V)' : 'não foi copiada para a planilha')
@@ -2241,16 +2225,15 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
         salvarCopia = sv; copiarTexto = ct; salvarFechamento = sf; $('data').value = dataF; pessoas = antes; quemFecha = qf; mostraQuemFecha(); novaComanda(); mostraValoresDia();
       }
     }
-    { // Impressão do fim do dia: um ticket por comanda (nova com pessoas e troco; antiga só com formas), resumo com o total e nome escapado
+    { // Impressão do fim do dia: só o resumo (comandas, total por forma, total do dia), sem as comandas uma a uma
       const d = '1999-07-07'; zerarDia(d);
-      const vazio = ticketsDoDia(d) === '' && imprimirComandas(d) === false;
+      const vazio = resumoDoDia(d) === '' && imprimirResumo(d) === false;
       guardarComanda(d, { hora: '10:00:00', formas: { pix: 1500 } });
-      guardarComanda(d, { hora: '11:30:00', formas: { pix: 3000, dinheiro: 1500 }, total: 4500, troco: 500, por: 'Pilar',
-        pag: [{ nome: 'Ana <b>', forma: 'pix', valor: 3000 }, { nome: 'Pessoa 2', forma: 'dinheiro', valor: 2000 }] });
-      const t = ticketsDoDia(d), n = (t.match(/class="ticket"/g) || []).length;
-      ok(vazio && n === 3 && t.includes('Comanda das 10:00:00') && t.includes('Comanda das 11:30:00') && t.includes('Ana &lt;b&gt;') && !t.includes('Ana <b>')
-        && t.includes('Fechada por Pilar') && t.includes('Troco') && t.includes(fmt(6000)) && t.includes('RESUMO DO DIA') && t.includes('width:72mm'),
-        'imprimir comandas do dia: 2 tickets + resumo (R$ 60,00), troco, quem fechou, nome escapado; dia vazio não imprime');
+      guardarComanda(d, { hora: '11:30:00', formas: { pix: 3000, dinheiro: 1500 } });
+      const t = resumoDoDia(d);
+      ok(vazio && t.includes('RESUMO DO DIA') && t.includes('<span>Comandas</span><span>2</span>') && t.includes(fmt(4500)) && t.includes(fmt(1500))
+        && t.includes(fmt(6000)) && !t.includes('Crédito') && !t.includes('10:00') && t.includes('width:72mm'),
+        'imprimir resumo do dia: 2 comandas, PIX R$ 45,00, Dinheiro R$ 15,00, total R$ 60,00, sem as comandas uma a uma; dia vazio não imprime');
       zerarDia(d);
     }
     const falhas = log.filter(l => l.startsWith('FALHA')).length;
