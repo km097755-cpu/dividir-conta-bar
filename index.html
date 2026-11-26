@@ -352,6 +352,7 @@ ul.barras .pc { font-family: var(--f-num); font-variant-numeric: tabular-nums; w
         <div class="totais" id="sobra-caixa" aria-live="polite"></div>
         <div class="acoes" id="acoes-fechamento"></div>
         <p class="hint" id="fechamento-status" aria-live="polite">"Finalizar o dia" grava o fechamento completo do dia em Fechamento do dia\(mês), dentro da pasta das comandas (sem pasta, vai para Downloads). "Imprimir resumo do dia" manda o resumo da data do caixa (comandas, total por forma e total do dia) para a impressora de notinhas (Margens: Nenhuma).</p>
+        <div class="acoes" id="arquivar-dia" hidden></div>
         <div class="field">
           <span class="field-title">Pasta onde salvar</span>
           <button type="button" class="btn-ghost" id="escolher-pasta-fech">Escolher pasta onde salvar</button>
@@ -1203,10 +1204,15 @@ $('acoes-fechamento').append(Object.assign(botaoConfirma('Finalizar o dia', asyn
   $('fechamento-status').textContent = `Dia ${dataBR(iso)} finalizado às ${horaAgora().slice(0, 5)}: ` + (onde ? `fechamento completo salvo ${onde}.` : 'não foi possível salvar o arquivo do fechamento (nada foi apagado; tente de novo).')
     + ` Saldo do caixa ${fmt(sobra)}${ult ? '' : ' (sem contagem: valor calculado)'}` + (onde ? `: essa é a abertura de caixa de ${dataBR(amanha)}.` : `; a abertura de caixa de ${dataBR(amanha)} não foi mudada.`)
     + (onde ? ' Comanda e suprimentos/retiradas limpos; as vendas continuam nos Resultados.' : '');
+  // Logo depois de finalizar: botão para imprimir o resumo do dia e guardar no arquivo (fica até finalizar de novo ou recarregar)
+  const fim = horaAgora().slice(0, 5), arq = $('arquivar-dia');
+  arq.replaceChildren(Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Imprimir resumo para arquivar',
+    onclick: () => imprimirResumo(iso, `Dia finalizado às ${fim} · via de arquivo`) }));
+  arq.hidden = false;
 }), { className: 'btn' }));
 // Impressão do fim do dia (impressora de notinhas Bematech/Elgin, bobina de 80 mm): só o resumo do dia da data do caixa
 // (quantas comandas, total por forma, total do dia). Não pede senha e não muda nada: dá para imprimir de novo.
-function resumoDoDia(iso) {
+function resumoDoDia(iso, arquivo = '') {
   const lista = lerComandasDia(iso);
   if (!lista.length) return '';
   const linha = (a, b, cls = '') => `<div class="l${cls ? ' ' + cls : ''}"><span>${a}</span><span>${b}</span></div>`;
@@ -1218,11 +1224,12 @@ function resumoDoDia(iso) {
     + '.c{text-align:center}.g{font-weight:700;font-size:13px}.l{display:flex;justify-content:space-between;gap:2mm}.l span:last-child{white-space:nowrap}'
     + 'hr{border:0;border-top:1px dashed #000;margin:1.5mm 0}'
     + `</style></head><body><div class="c g">BOOKAFÉ</div><div class="c g">RESUMO DO DIA</div><div class="c">${dataBR(iso)} · impresso às ${horaAgora().slice(0, 5)}</div><hr>`
-    + linha('Comandas', String(lista.length)) + Object.keys(PAGAMENTOS).filter(k => formas[k]).map(k => linha(PAGAMENTOS[k], fmt(formas[k]))).join('')
-    + '<hr>' + linha('TOTAL DO DIA', fmt(geral), 'g') + '<div class="c">(troco já descontado)</div></body></html>';
+    + linha('Comandas', String(lista.length)) + Object.keys(PAGAMENTOS).map(k => linha(PAGAMENTOS[k], fmt(formas[k] || 0))).join('') // as 4 formas sempre (Débito também, mesmo zerado)
+    + '<hr>' + linha('TOTAL DO DIA', fmt(geral), 'g') + '<div class="c">(troco já descontado)</div>'
+    + (arquivo ? `<hr><div class="c">${arquivo}</div>` : '') + '</body></html>';
 }
-function imprimirResumo(iso) {
-  const html = resumoDoDia(iso);
+function imprimirResumo(iso, arquivo = '') {
+  const html = resumoDoDia(iso, arquivo);
   if (!html) return avisar(`Nenhuma comanda finalizada em ${dataBR(iso)}: não há resumo para imprimir.`, 6000), false;
   const fr = Object.assign(document.createElement('iframe'), { title: 'Impressão do resumo do dia' });
   fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
@@ -2218,10 +2225,12 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
         fim.click(); fim.click(); await new Promise(r => setTimeout(r, 30));
         ok(lerValor('abertura', amanha) === 1234 && !lerValor('abmanual', amanha) && $('fechamento-status').textContent.includes('não foi mudada'),
           'finalizar o dia sem conseguir salvar o arquivo não muda a abertura de amanhã');
+        ok(!$('arquivar-dia').hidden && $('arquivar-dia').textContent === 'Imprimir resumo para arquivar' && resumoDoDia(d, 'via de arquivo').includes('via de arquivo'),
+          'depois de finalizar o dia aparece o botão "Imprimir resumo para arquivar" (resumo com a marca de via de arquivo)');
       } catch (e) { ok(false, 'finalizar com falha: ' + e.message); }
       finally {
         falhouGravar = false; $('falha-gravar')?.remove();
-        gravarValor('abertura', amanha, 0); gravarValor('abmanual', amanha, 0); zerarDia(d); $('fechamento-status').textContent = '';
+        gravarValor('abertura', amanha, 0); gravarValor('abmanual', amanha, 0); zerarDia(d); $('fechamento-status').textContent = ''; $('arquivar-dia').hidden = true; $('arquivar-dia').replaceChildren();
         salvarCopia = sv; copiarTexto = ct; salvarFechamento = sf; $('data').value = dataF; pessoas = antes; quemFecha = qf; mostraQuemFecha(); novaComanda(); mostraValoresDia();
       }
     }
@@ -2232,8 +2241,8 @@ if (/[?&]teste\b/.test(location.search) && ['localhost', '127.0.0.1', '[::1]', '
       guardarComanda(d, { hora: '11:30:00', formas: { pix: 3000, dinheiro: 1500 } });
       const t = resumoDoDia(d);
       ok(vazio && t.includes('RESUMO DO DIA') && t.includes('<span>Comandas</span><span>2</span>') && t.includes(fmt(4500)) && t.includes(fmt(1500))
-        && t.includes(fmt(6000)) && !t.includes('Crédito') && !t.includes('10:00') && t.includes('width:72mm'),
-        'imprimir resumo do dia: 2 comandas, PIX R$ 45,00, Dinheiro R$ 15,00, total R$ 60,00, sem as comandas uma a uma; dia vazio não imprime');
+        && t.includes(fmt(6000)) && t.includes(`<span>Débito</span><span>${fmt(0)}</span>`) && t.includes(`<span>Crédito</span><span>${fmt(0)}</span>`) && !t.includes('10:00') && t.includes('width:72mm'),
+        'imprimir resumo do dia: 2 comandas, PIX R$ 45,00, Débito e Crédito R$ 0,00, Dinheiro R$ 15,00, total R$ 60,00, sem as comandas uma a uma; dia vazio não imprime');
       zerarDia(d);
     }
     const falhas = log.filter(l => l.startsWith('FALHA')).length;
